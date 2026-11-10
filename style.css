@@ -1,0 +1,29 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #062b3c; }
+body { font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; color: #e8f6fb; }
+#view { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; cursor: none; pointer-events: none; }
+body.settings-open #view { cursor: default; }
+kbd { display: inline-block; padding: 1px 6px; border: 1px solid rgba(232,246,251,.45); border-radius: 4px; font: 600 12px/1.4 ui-monospace, Menlo, monospace; background: rgba(255,255,255,.08); }
+.hint { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); padding: 8px 14px; border-radius: 999px; background: rgba(2,24,34,.55); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); opacity: 0; transition: opacity 1.2s ease; pointer-events: none; white-space: nowrap; }
+.hint.show { opacity: 1; }
+.settings { position: fixed; top: 24px; right: 24px; width: 320px; max-height: calc(100vh - 48px); overflow: auto; padding: 18px 18px 14px; border-radius: 14px; background: rgba(3,28,40,.78); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border: 1px solid rgba(160,220,240,.18); box-shadow: 0 10px 40px rgba(0,0,0,.35); }
+.settings[hidden] { display: none; }
+.settings h1 { margin: 0; font-size: 20px; letter-spacing: .04em; }
+.settings .sub { margin: 0 0 12px; opacity: .7; }
+.settings h2 { margin: 16px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; opacity: .75; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 6px 0; }
+select, button { font: inherit; color: inherit; background: rgba(255,255,255,.08); border: 1px solid rgba(160,220,240,.3); border-radius: 8px; padding: 5px 8px; }
+select option { color: #000; }
+button { cursor: pointer; }
+button:hover { background: rgba(255,255,255,.14); }
+.species { padding: 8px 0; border-top: 1px solid rgba(160,220,240,.12); }
+.species .top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.species .name { display: flex; align-items: center; gap: 8px; }
+.species .swatch { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.species .count { min-width: 2.5em; text-align: right; font-variant-numeric: tabular-nums; }
+.species input[type=range] { width: 100%; margin-top: 4px; }
+.species.off input[type=range], .species.off .count { opacity: .35; }
+.species .role { font-size: 12px; opacity: .6; }
+.actions { margin-top: 12px; }
+.settings footer { margin-top: 12px; font-size: 12px; opacity: .65; }
+.noscript { position: fixed; inset: 0; display: grid; place-items: center; margin: 0; }
