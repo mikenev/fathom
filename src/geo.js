@@ -6,6 +6,8 @@ export function mergeGeometries(list) {
   let n = 0;
   for (const g of parts) n += g.attributes.position.count;
   const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), col = new Float32Array(n * 3);
+  const anyGlow = parts.some((g) => g.attributes.glow);
+  const glow = anyGlow ? new Float32Array(n) : null;
   let o = 0;
   for (const g of parts) {
     const c = g.attributes.position.count;
@@ -13,12 +15,14 @@ export function mergeGeometries(list) {
     nor.set(g.attributes.normal.array, o * 3);
     if (g.attributes.color) col.set(g.attributes.color.array, o * 3);
     else col.fill(1, o * 3, (o + c) * 3);
+    if (glow && g.attributes.glow) glow.set(g.attributes.glow.array, o);
     o += c;
   }
   const out = new THREE.BufferGeometry();
   out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
   out.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  if (glow) out.setAttribute('glow', new THREE.BufferAttribute(glow, 1));
   return out;
 }
 
@@ -31,6 +35,15 @@ export function paint(geo, fn) {
   }
   geo.setAttribute('color', new THREE.BufferAttribute(c, 3));
   return geo;
+}
+
+// Per-vertex glow strength (0..1) for photophores; read by patchMaterial's glow option.
+export function glowPaint(geo, fn) {
+  const g = geo.index ? geo.toNonIndexed() : geo;
+  const p = g.attributes.position, a = new Float32Array(p.count), v = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) { v.fromBufferAttribute(p, i); a[i] = fn(v); }
+  g.setAttribute('glow', new THREE.BufferAttribute(a, 1));
+  return g;
 }
 
 // Double-sided fin from a flat polygon fan (points are [x, y, z]).

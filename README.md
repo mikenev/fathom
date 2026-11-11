@@ -2,7 +2,16 @@
 
 A calm, fullscreen browser aquarium built with Three.js. Leave it running like a classic desktop aquarium.
 
-**Milestone 1:** the tropical coral reef scene with clownfish, blue tang, a lyretail anthias school and two blacktip reef sharks that cruise and never hunt. All models, textures and shaders are original and procedural.
+Four scenes, each with its own species, lighting and particles. Sharks cruise and never hunt. All models, textures and shaders are original and procedural.
+
+| Scene | Preset |
+| --- | --- |
+| Tropical coral reef | 6 clownfish, 4 blue tang, 18 lyretail anthias, 2 blacktip reef sharks |
+| Open ocean | 40 Pacific sardines (bait ball), 6 yellowfin tuna, 2 scalloped hammerheads |
+| Kelp forest | 5 garibaldi, 16 señorita, 4 kelp bass, 2 leopard sharks on the sandy bottom |
+| Deep sea | 24 lanternfish, 10 Atlantic hatchetfish, 2 footballfish, 2 glowing velvet-belly lanternsharks |
+
+The reef and kelp forest get caustics and god rays, the open ocean gets soft rays and faint caustics, and the deep sea has no sunlight: bioluminescent glow and drifting marine snow instead.
 
 ## Run it
 
@@ -22,21 +31,27 @@ Three.js r170 is vendored in `vendor/three/` (MIT license included), so nothing 
 | `F` | Enter fullscreen |
 | `S` | Open or close settings (the aquarium keeps running behind it) |
 | `Esc` | Close settings if open, otherwise exit fullscreen |
+| Arrow keys | Move a focused slider (Tab through the settings) |
 
 The mouse is ignored: no camera drag, click or hover. The camera holds a mostly fixed view with a very slow drift.
 
 ## Settings
 
-Settings cover the scene (only the reef in M1) and, per species, on/off plus a count. They save to `localStorage` under `fathom.settings.v1` and restore on the next visit. **Reset to reef preset** restores the defaults (6 clownfish, 4 blue tang, 18 anthias, 2 sharks). Added or removed fish fade in and out instead of popping.
+Settings cover the scene and, per species in that scene, on/off plus a count. Each scene keeps its own counts. Everything saves to `localStorage` under `fathom.settings.v1` (M1 settings carry over) and restores on the next visit, including the chosen scene. **Reset this scene's preset** restores only the current scene's defaults. Switching scenes fades through dark, and added or removed fish fade in and out instead of popping.
+
+The aquarium pauses while the tab is hidden and picks up where it left off. For previews, `?scene=ocean` opens a scene without changing the saved choice.
+
+In Safari, the browser itself takes `Esc` in fullscreen, so one press exits fullscreen and also closes settings.
 
 ## Layout
 
 - `index.html`, `style.css`: page shell and settings overlay
 - `src/main.js`: renderer, camera drift, keys, main loop
-- `src/reef.js`: seafloor, coral, rocks, anemones, light rays, motes and bubbles
+- `src/scenes.js`: per-scene species, lighting, fog, bounds and environment builders (kelp, open water, deep sea)
+- `src/reef.js`: shared backdrop, seafloor, rocks, light rays and particles, plus the reef's coral and anemones
 - `src/fish.js`: procedural species models and their colors
-- `src/sim.js`: schooling, wandering and shark cruise behavior
-- `src/shaders.js`: shared caustics and tail-wiggle shader patches
+- `src/sim.js`: schooling, wandering, territory and shark cruise behavior, plus glow halos
+- `src/shaders.js`: shared caustics, glow and tail-wiggle shader patches
 - `src/settings.js`: settings storage and panel
 
 Browsers: desktop Chrome and Safari first.

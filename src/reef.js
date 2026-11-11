@@ -2,8 +2,6 @@ import * as THREE from 'three';
 import { mergeGeometries, paint, rng } from './geo.js';
 import { patchMaterial, shared } from './shaders.js';
 
-export const WATER = new THREE.Color(0x1b7a98);
-
 export function floorHeight(x, z) {
   return -0.4
     + Math.sin(x * 0.11 + 1.3) * 0.55 + Math.cos(z * 0.13 - 0.4) * 0.5
@@ -11,21 +9,22 @@ export function floorHeight(x, z) {
     + Math.max(0, -z - 18) * 0.12; // gentle rise toward the back wall
 }
 
-function backdrop(fogColor) {
+// Shared water backdrop: fades from the fog color at the horizon to a lighter
+// surface tint above and a darker tone below. Scenes retint it through uniforms.
+export function backdrop(fogColor) {
   const g = new THREE.SphereGeometry(400, 32, 16);
   const m = new THREE.ShaderMaterial({
     side: THREE.BackSide, depthWrite: false, fog: false,
-    uniforms: { uTime: shared.uTime, uFog: { value: fogColor } },
+    uniforms: { uTime: shared.uTime, uFog: { value: fogColor }, uSurf: { value: new THREE.Vector3(0.2, 0.62, 0.72) }, uLow: { value: 0.55 }, uRipple: { value: 0.03 } },
     vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
-    fragmentShader: `varying vec3 vDir; uniform float uTime; uniform vec3 uFog;
+    fragmentShader: `varying vec3 vDir; uniform float uTime; uniform vec3 uFog; uniform vec3 uSurf; uniform float uLow, uRipple;
       void main(){
         float y = vDir.y;
         // Same color space as three's fog, so the far floor melts into the water.
-        vec3 surf = vec3(0.2, 0.62, 0.72);
-        vec3 c = mix(uFog, surf, smoothstep(0.04, 0.95, y));
-        c = mix(uFog * 0.55, c, smoothstep(-0.5, 0.0, y));
+        vec3 c = mix(uFog, uSurf, smoothstep(0.04, 0.95, y));
+        c = mix(uFog * uLow, c, smoothstep(-0.5, 0.0, y));
         float ripple = sin(vDir.x * 40.0 + uTime * 0.6) * sin(vDir.z * 37.0 - uTime * 0.5);
-        c += smoothstep(0.45, 1.0, y) * ripple * 0.03;
+        c += smoothstep(0.45, 1.0, y) * ripple * uRipple;
         gl_FragColor = vec4(c, 1.0);
         #include <colorspace_fragment>
       }`,
@@ -35,22 +34,22 @@ function backdrop(fogColor) {
   return mesh;
 }
 
-function seafloor() {
+export function seafloor(height = floorHeight, tones = [0xd9c9a0, 0xa89870, 0xeee2c0], caustic = 0.8) {
   const g = new THREE.PlaneGeometry(700, 700, 220, 220);
   g.rotateX(-Math.PI / 2);
   const p = g.attributes.position;
-  for (let i = 0; i < p.count; i++) p.setY(i, floorHeight(p.getX(i), p.getZ(i)));
+  for (let i = 0; i < p.count; i++) p.setY(i, height(p.getX(i), p.getZ(i)));
   g.computeVertexNormals();
-  const sand = new THREE.Color(0xd9c9a0), dark = new THREE.Color(0xa89870), pale = new THREE.Color(0xeee2c0);
+  const sand = new THREE.Color(tones[0]), dark = new THREE.Color(tones[1]), pale = new THREE.Color(tones[2]);
   paint(g, (v, o) => {
     const n = Math.sin(v.x * 1.7) * Math.cos(v.z * 1.3) * 0.5 + Math.sin(v.x * 0.37 + v.z * 0.29) * 0.5;
     o.copy(sand).lerp(n > 0 ? pale : dark, Math.abs(n) * 0.5);
   });
-  const m = patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 }), { caustic: 0.8 });
+  const m = patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 }), { caustic });
   return new THREE.Mesh(g, m);
 }
 
-function rock(r, rand, color) {
+export function rock(r, rand, color) {
   const g = new THREE.IcosahedronGeometry(1, 3);
   const p = g.attributes.position, v = new THREE.Vector3();
   const a = rand() * 10, b = rand() * 10;
@@ -160,19 +159,20 @@ function anemone(rand, count = 70) {
   return mesh;
 }
 
-function rays() {
+// Shared god rays from the surface; uStrength fades them per scene.
+export function rays() {
   const group = new THREE.Group();
   const mat = new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
-    uniforms: { uTime: shared.uTime },
+    uniforms: { uTime: shared.uTime, uStrength: { value: 1 } },
     vertexShader: `varying vec2 vUv; varying float vSeed; attribute float aSeed;
       void main(){ vUv = uv; vSeed = aSeed; gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position,1.0); }`,
-    fragmentShader: `varying vec2 vUv; varying float vSeed; uniform float uTime;
+    fragmentShader: `varying vec2 vUv; varying float vSeed; uniform float uTime; uniform float uStrength;
       void main(){
         float edge = smoothstep(0.0, 0.5, vUv.x) * smoothstep(1.0, 0.5, vUv.x);
         float len = smoothstep(0.0, 0.75, vUv.y);
         float flick = 0.55 + 0.45 * sin(uTime * 0.21 + vSeed * 6.0) * sin(uTime * 0.13 + vSeed * 3.0);
-        float a = edge * edge * len * flick * 0.085;
+        float a = edge * edge * len * flick * 0.085 * uStrength;
         gl_FragColor = vec4(vec3(0.75, 0.95, 1.0) * a, a);
       }`,
   });
@@ -191,12 +191,13 @@ function rays() {
   mesh.renderOrder = 5;
   mesh.frustumCulled = false;
   group.add(mesh);
+  group.userData.uniforms = mat.uniforms;
   return group;
 }
 
 // Drifting motes and rising bubbles, animated entirely on the GPU with wraparound
 // that fades in and out, so nothing pops.
-function particles(count, box, opts) {
+export function particles(count, box, opts) {
   const r = rng(opts.seed);
   const pos = new Float32Array(count * 3), seed = new Float32Array(count);
   for (let i = 0; i < count; i++) {
@@ -219,7 +220,7 @@ function particles(count, box, opts) {
         vec4 mv = modelViewMatrix * vec4(p + uOrigin, 1.0);
         gl_Position = projectionMatrix * mv;
         gl_PointSize = uSize * uPix * (0.6 + aSeed) * (30.0 / -mv.z);
-        vFade *= smoothstep(70.0, 10.0, -mv.z);
+        vFade *= 1.0 - smoothstep(10.0, 70.0, -mv.z);
       }`,
     fragmentShader: `uniform vec3 uColor; uniform float uAlpha; varying float vFade;
       void main(){
@@ -236,7 +237,6 @@ function particles(count, box, opts) {
 
 export function buildReef(scene) {
   const rand = rng(1234);
-  scene.add(backdrop(scene.fog.color));
   scene.add(seafloor());
 
   const statics = [];
@@ -288,11 +288,10 @@ export function buildReef(scene) {
   const reef = new THREE.Mesh(mergeGeometries(statics), reefMat);
   scene.add(reef);
 
-  scene.add(rays());
   scene.add(particles(1400, new THREE.Vector3(80, 22, 60), { seed: 5, origin: new THREE.Vector3(-40, -1, -48), vel: new THREE.Vector3(0.12, 0.03, 0.05), size: 0.9, color: 0xcfeef5, alpha: 0.35 }));
   const vents = [[-9, -6], [5, -9], [0, -18]];
   for (const [vx, vz] of vents) {
     scene.add(particles(28, new THREE.Vector3(0.8, 16, 0.8), { seed: vx * 13 + vz, origin: new THREE.Vector3(vx - 0.4, floorHeight(vx, vz) + 1, vz - 0.4), vel: new THREE.Vector3(0, 1.1, 0), size: 2.2, color: 0xe8fbff, alpha: 0.5, ring: true }));
   }
-  return { anemones, obstacles };
+  return { anemones, obstacles, homes: anemones, floor: floorHeight };
 }
