@@ -12,7 +12,7 @@ function scenePreset(sceneKey) {
 export function defaults() {
   const scenes = {};
   for (const s of SCENE_ORDER) scenes[s] = scenePreset(s);
-  return { version: 2, scene: 'reef', scenes };
+  return { version: 3, scene: 'reef', muted: false, scenes };
 }
 
 export function resetScene(state, sceneKey) {
@@ -28,6 +28,7 @@ export function load() {
     if (!raw) return out;
     const s = JSON.parse(raw);
     if (SCENES[s?.scene]) out.scene = s.scene;
+    out.muted = s?.muted === true;
     for (const sceneKey of SCENE_ORDER) {
       const src = s?.scenes?.[sceneKey]?.species || {};
       for (const k of SCENES[sceneKey].species) {

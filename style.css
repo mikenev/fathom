@@ -5,12 +5,15 @@ body { font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, 
 body.settings-open #view { cursor: default; }
 .fade { position: fixed; inset: 0; background: #01070c; opacity: 0; transition: opacity .9s ease; pointer-events: none; }
 .fade.on { opacity: 1; }
-:focus-visible { outline: 2px solid #7fd8f0; outline-offset: 2px; }
+:focus-visible { outline: 3px solid #9be8ff; outline-offset: 2px; }
+body.nav .settings :focus, body.nav .toolbar :focus { outline: 3px solid #9be8ff; outline-offset: 2px; }
 kbd { display: inline-block; padding: 1px 6px; border: 1px solid rgba(232,246,251,.45); border-radius: 4px; font: 600 12px/1.4 ui-monospace, Menlo, monospace; background: rgba(255,255,255,.08); }
 .hint { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); padding: 8px 14px; border-radius: 999px; background: rgba(2,24,34,.55); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); opacity: 0; transition: opacity 1.2s ease; pointer-events: none; white-space: nowrap; }
 .hint.show { opacity: 1; }
 .settings { position: fixed; top: 24px; right: 24px; width: 320px; max-height: calc(100vh - 48px); overflow: auto; padding: 18px 18px 14px; border-radius: 14px; background: rgba(3,28,40,.78); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border: 1px solid rgba(160,220,240,.18); box-shadow: 0 10px 40px rgba(0,0,0,.35); }
 .settings[hidden] { display: none; }
+.settings header { display: flex; align-items: flex-start; justify-content: space-between; }
+.settings .close { font-size: 20px; line-height: 1; padding: 4px 10px; }
 .settings h1 { margin: 0; font-size: 20px; letter-spacing: .04em; }
 .settings .sub { margin: 0 0 12px; opacity: .7; }
 .settings h2 { margin: 16px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; opacity: .75; }
@@ -30,3 +33,22 @@ button:hover { background: rgba(255,255,255,.14); }
 .actions { margin-top: 12px; }
 .settings footer { margin-top: 12px; font-size: 12px; opacity: .65; }
 .noscript { position: fixed; inset: 0; display: grid; place-items: center; margin: 0; }
+.toolbar { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 8px); display: flex; gap: 8px; padding: 8px; border-radius: 14px; background: rgba(2,24,34,.6); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); opacity: 0; pointer-events: none; transition: opacity .35s ease, transform .35s ease; }
+.toolbar.show { opacity: 1; pointer-events: auto; transform: translate(-50%, 0); }
+.toolbar button { padding: 8px 12px; white-space: nowrap; }
+.toolbar button[hidden] { display: none; }
+.fps { position: fixed; top: 10px; left: 10px; padding: 4px 8px; border-radius: 6px; background: rgba(0,0,0,.5); font: 12px/1.3 ui-monospace, Menlo, monospace; pointer-events: none; }
+input[type=checkbox] { accent-color: #5cc8e6; }
+@media (pointer: coarse) {
+  .toolbar button, .settings button, select { min-height: 44px; padding: 10px 14px; }
+  input[type=checkbox] { width: 24px; height: 24px; }
+  .species { padding: 12px 0; }
+  .species input[type=range] { height: 32px; }
+  .settings footer { display: none; }
+}
+@media (max-width: 560px) {
+  .settings { left: 12px; right: 12px; top: 12px; width: auto; max-height: calc(100vh - 24px); }
+  .toolbar { bottom: 16px; gap: 6px; padding: 6px; }
+  .toolbar button { padding: 8px 9px; font-size: 13px; }
+}
+.species:focus-within, .row:focus-within { background: rgba(155,232,255,.08); border-radius: 8px; box-shadow: 0 0 0 4px rgba(155,232,255,.08); }

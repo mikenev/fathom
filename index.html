@@ -14,22 +14,35 @@
 <body>
 <canvas id="view" aria-label="Fathom aquarium"></canvas>
 <div id="fade" class="fade on" aria-hidden="true"></div>
-<div id="hint" class="hint" role="status">Press <kbd>F</kbd> for fullscreen &middot; <kbd>S</kbd> for settings</div>
+<div id="hint" class="hint" role="status"></div>
+<nav id="toolbar" class="toolbar" aria-label="Controls">
+  <button type="button" data-act="settings">Settings</button>
+  <button type="button" data-act="fullscreen">Fullscreen</button>
+  <button type="button" data-act="scene">Next scene</button>
+  <button type="button" data-act="sound" aria-pressed="true">Sound on</button>
+</nav>
 <section id="settings" class="settings" hidden aria-label="Settings">
   <header>
-    <h1>Fathom</h1>
-    <p class="sub">Settings</p>
+    <div>
+      <h1>Fathom</h1>
+      <p class="sub">Settings</p>
+    </div>
+    <button id="close-settings" class="close" type="button" aria-label="Close settings">&times;</button>
   </header>
   <label class="row">
     <span>Scene</span>
     <select id="scene-select"></select>
+  </label>
+  <label class="row">
+    <span>Sound</span>
+    <input id="sound-toggle" type="checkbox" aria-label="Sound">
   </label>
   <h2>Species</h2>
   <div id="species-list"></div>
   <div class="actions">
     <button id="reset-defaults" type="button">Reset this scene's preset</button>
   </div>
-  <footer><kbd>S</kbd> or <kbd>Esc</kbd> closes &middot; <kbd>F</kbd> fullscreen</footer>
+  <footer><kbd>S</kbd>, <kbd>Esc</kbd> or Back closes &middot; <kbd>F</kbd> fullscreen &middot; <kbd>M</kbd> sound</footer>
 </section>
 <noscript><p class="noscript">Fathom needs JavaScript and WebGL.</p></noscript>
 <script type="module" src="./src/main.js"></script>
