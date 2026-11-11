@@ -1,33 +1,47 @@
-import { SPECIES, SPECIES_ORDER } from './fish.js';
+import { SPECIES } from './fish.js';
+import { SCENES, SCENE_ORDER } from './scenes.js';
 
 const KEY = 'fathom.settings.v1';
 
-export function defaults() {
+function scenePreset(sceneKey) {
   const species = {};
-  for (const k of SPECIES_ORDER) species[k] = { on: true, count: SPECIES[k].defaultCount };
-  return { version: 1, scene: 'reef', scenes: { reef: { species } } };
+  for (const k of SCENES[sceneKey].species) species[k] = { on: true, count: SPECIES[k].defaultCount };
+  return { species };
 }
 
+export function defaults() {
+  const scenes = {};
+  for (const s of SCENE_ORDER) scenes[s] = scenePreset(s);
+  return { version: 2, scene: 'reef', scenes };
+}
+
+export function resetScene(state, sceneKey) {
+  state.scenes[sceneKey] = scenePreset(sceneKey);
+}
+
+// Reads saved settings (M1's reef-only shape included), keeping only known scenes,
+// known species and counts inside each species' range.
 export function load() {
-  const d = defaults();
+  const out = defaults();
   try {
     const raw = localStorage.getItem(KEY);
-    if (!raw) return d;
+    if (!raw) return out;
     const s = JSON.parse(raw);
-    const out = defaults();
-    out.scene = s.scene === 'reef' ? 'reef' : 'reef';
-    const src = s?.scenes?.reef?.species || {};
-    for (const k of SPECIES_ORDER) {
-      const v = src[k];
-      if (!v) continue;
-      out.scenes.reef.species[k] = {
-        on: v.on !== false,
-        count: Math.max(0, Math.min(SPECIES[k].max, Math.round(Number(v.count) || 0))),
-      };
+    if (SCENES[s?.scene]) out.scene = s.scene;
+    for (const sceneKey of SCENE_ORDER) {
+      const src = s?.scenes?.[sceneKey]?.species || {};
+      for (const k of SCENES[sceneKey].species) {
+        const v = src[k];
+        if (!v) continue;
+        out.scenes[sceneKey].species[k] = {
+          on: v.on !== false,
+          count: Math.max(0, Math.min(SPECIES[k].max, Math.round(Number(v.count) || 0))),
+        };
+      }
     }
     return out;
   } catch {
-    return d;
+    return out;
   }
 }
 
@@ -35,10 +49,10 @@ export function save(s) {
   try { localStorage.setItem(KEY, JSON.stringify(s)); } catch { /* storage may be unavailable; keep running */ }
 }
 
-export function buildPanel(root, state, onChange) {
+export function buildPanel(root, state, sceneKey, onChange) {
   root.innerHTML = '';
-  for (const k of SPECIES_ORDER) {
-    const sp = SPECIES[k], cur = state.scenes.reef.species[k];
+  for (const k of SCENES[sceneKey].species) {
+    const sp = SPECIES[k], cur = state.scenes[sceneKey].species[k];
     const el = document.createElement('div');
     el.className = 'species' + (cur.on ? '' : ' off');
     el.dataset.species = k;

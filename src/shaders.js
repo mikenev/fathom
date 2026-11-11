@@ -1,5 +1,7 @@
+import * as THREE from 'three';
 // Shared shader snippets: animated caustics and fish/tentacle motion.
-export const shared = { uTime: { value: 0 } };
+// uCausticScale lets each scene dim or remove surface caustics without recompiling.
+export const shared = { uTime: { value: 0 }, uCausticScale: { value: 1 } };
 
 export const causticGLSL = /* glsl */`
 float fathomCaustic(vec2 p, float t) {
@@ -18,10 +20,12 @@ float fathomCaustic(vec2 p, float t) {
 // Adds a world-position varying, caustic light from above, and optional
 // motion (tail wiggle for fish, sway for tentacles) to a standard material.
 export function patchMaterial(mat, opts = {}) {
-  const { caustic = 0.6, wiggle = null, sway = null } = opts;
+  const { caustic = 0.6, wiggle = null, sway = null, glow = null } = opts;
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = shared.uTime;
     shader.uniforms.uCaustic = { value: caustic };
+    shader.uniforms.uCausticScale = shared.uCausticScale;
+    if (glow) shader.uniforms.uGlow = { value: new THREE.Color(glow) };
     if (wiggle) {
       shader.uniforms.uLen = { value: wiggle.length };
       shader.uniforms.uAmp = { value: wiggle.amp };
@@ -29,6 +33,7 @@ export function patchMaterial(mat, opts = {}) {
     let vhead = `uniform float uTime;\nvarying vec3 vFathomWorld;\n`;
     if (wiggle) vhead += `uniform float uLen;\nuniform float uAmp;\nattribute float aPhase;\n`;
     if (sway) vhead += `attribute float aPhase;\n`;
+    if (glow) vhead += `attribute float glow;\nvarying float vGlow;\n${wiggle ? '' : 'attribute float aPhase;\n'}`;
     shader.vertexShader = vhead + shader.vertexShader;
     let motion = '';
     if (wiggle) {
@@ -43,10 +48,14 @@ export function patchMaterial(mat, opts = {}) {
       motion = `
         float h = max(transformed.y, 0.0);
         float s = sin(uTime * 0.9 + aPhase) * 0.6 + sin(uTime * 1.7 + aPhase * 1.3) * 0.25;
-        transformed.x += s * h * h * ${sway.toFixed(3)};
-        transformed.z += cos(uTime * 0.7 + aPhase * 0.8) * 0.4 * h * h * ${sway.toFixed(3)};
+        transformed.x += s * h * h * ${sway.toFixed(5)};
+        transformed.z += cos(uTime * 0.7 + aPhase * 0.8) * 0.4 * h * h * ${sway.toFixed(5)};
       `;
     }
+    if (glow) motion += `
+        // photophores breathe slowly, each fish on its own phase
+        vGlow = glow * (0.72 + 0.28 * sin(uTime * 1.3 + aPhase * 0.11));
+      `;
     shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>\n${motion}`);
     shader.vertexShader = shader.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>
       {
@@ -56,15 +65,16 @@ export function patchMaterial(mat, opts = {}) {
         #endif
         vFathomWorld = (modelMatrix * fwp).xyz;
       }`);
-    shader.fragmentShader = `uniform float uTime;\nuniform float uCaustic;\nvarying vec3 vFathomWorld;\n${causticGLSL}\n` + shader.fragmentShader;
+    shader.fragmentShader = `uniform float uTime;\nuniform float uCaustic;\nuniform float uCausticScale;\nvarying vec3 vFathomWorld;\n${glow ? 'uniform vec3 uGlow;\nvarying float vGlow;\n' : ''}${causticGLSL}\n` + shader.fragmentShader;
     shader.fragmentShader = shader.fragmentShader.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
       {
         float up = clamp(normal.y * 0.5 + 0.5, 0.0, 1.0);
         float depthFade = smoothstep(-2.0, 18.0, vFathomWorld.y) * 0.6 + 0.4;
         float cz = fathomCaustic(vFathomWorld.xz + vFathomWorld.y * 0.15, uTime);
-        totalEmissiveRadiance += diffuseColor.rgb * vec3(0.75, 0.95, 1.0) * cz * uCaustic * depthFade * (0.35 + 0.65 * up);
+        totalEmissiveRadiance += diffuseColor.rgb * vec3(0.75, 0.95, 1.0) * cz * uCaustic * uCausticScale * depthFade * (0.35 + 0.65 * up);
+        ${glow ? 'totalEmissiveRadiance += uGlow * vGlow * 4.0;' : ''}
       }`);
   };
-  mat.customProgramCacheKey = () => `fathom-${caustic}-${wiggle ? 'w' + wiggle.length : ''}-${sway || ''}`;
+  mat.customProgramCacheKey = () => `fathom-${caustic}-${wiggle ? 'w' + wiggle.length : ''}-${sway || ''}-${glow ?? ''}`;
   return mat;
 }

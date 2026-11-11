@@ -3,6 +3,9 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #062b3c; }
 body { font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; color: #e8f6fb; }
 #view { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; cursor: none; pointer-events: none; }
 body.settings-open #view { cursor: default; }
+.fade { position: fixed; inset: 0; background: #01070c; opacity: 0; transition: opacity .9s ease; pointer-events: none; }
+.fade.on { opacity: 1; }
+:focus-visible { outline: 2px solid #7fd8f0; outline-offset: 2px; }
 kbd { display: inline-block; padding: 1px 6px; border: 1px solid rgba(232,246,251,.45); border-radius: 4px; font: 600 12px/1.4 ui-monospace, Menlo, monospace; background: rgba(255,255,255,.08); }
 .hint { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); padding: 8px 14px; border-radius: 999px; background: rgba(2,24,34,.55); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); opacity: 0; transition: opacity 1.2s ease; pointer-events: none; white-space: nowrap; }
 .hint.show { opacity: 1; }

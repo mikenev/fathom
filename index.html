@@ -13,6 +13,7 @@
 </head>
 <body>
 <canvas id="view" aria-label="Fathom aquarium"></canvas>
+<div id="fade" class="fade on" aria-hidden="true"></div>
 <div id="hint" class="hint" role="status">Press <kbd>F</kbd> for fullscreen &middot; <kbd>S</kbd> for settings</div>
 <section id="settings" class="settings" hidden aria-label="Settings">
   <header>
@@ -21,14 +22,12 @@
   </header>
   <label class="row">
     <span>Scene</span>
-    <select id="scene-select">
-      <option value="reef" selected>Tropical coral reef</option>
-    </select>
+    <select id="scene-select"></select>
   </label>
   <h2>Species</h2>
   <div id="species-list"></div>
   <div class="actions">
-    <button id="reset-defaults" type="button">Reset to reef preset</button>
+    <button id="reset-defaults" type="button">Reset this scene's preset</button>
   </div>
   <footer><kbd>S</kbd> or <kbd>Esc</kbd> closes &middot; <kbd>F</kbd> fullscreen</footer>
 </section>
