@@ -6,7 +6,19 @@ export function floorHeight(x, z) {
   return -0.4
     + Math.sin(x * 0.11 + 1.3) * 0.55 + Math.cos(z * 0.13 - 0.4) * 0.5
     + Math.sin((x + z) * 0.31) * 0.18 + Math.cos(x * 0.47 - z * 0.23) * 0.1
-    + Math.max(0, -z - 18) * 0.12; // gentle rise toward the back wall
+    + Math.max(0, -z - 18) * 0.12 // gentle rise toward the back wall
+    + mounds(x, z);
+}
+
+// Low reef mounds (bommies) that lift the coral clusters off the sand, tallest toward the back.
+const MOUNDS = [[-18, -14, 1.6, 34], [11, -24, 2.0, 46], [20, -16, 1.3, 30], [0, -18, 1.0, 26], [-12, -26, 1.8, 40], [-27, -20, 1.4, 36], [27, -28, 1.7, 40], [5, -9, 0.6, 14]];
+function mounds(x, z) {
+  let h = 0;
+  for (const [mx, mz, a, w] of MOUNDS) {
+    const d2 = (x - mx) * (x - mx) + (z - mz) * (z - mz);
+    if (d2 < w * 9) h += a * Math.exp(-d2 / w);
+  }
+  return h;
 }
 
 // Shared water backdrop: fades from the fog color at the horizon to a lighter
@@ -49,8 +61,8 @@ export function seafloor(height = floorHeight, tones = [0xd9c9a0, 0xa89870, 0xee
   return new THREE.Mesh(g, m);
 }
 
-export function rock(r, rand, color) {
-  const g = new THREE.IcosahedronGeometry(1, 3);
+export function rock(r, rand, color, detail = 3) {
+  const g = new THREE.IcosahedronGeometry(1, detail);
   const p = g.attributes.position, v = new THREE.Vector3();
   const a = rand() * 10, b = rand() * 10;
   for (let i = 0; i < p.count; i++) {
@@ -70,13 +82,13 @@ function branching(rand, color, size) {
   const up = new THREE.Vector3(0, 1, 0);
   function grow(origin, dir, len, rad, depth) {
     const end = origin.clone().addScaledVector(dir, len);
-    const g = new THREE.CylinderGeometry(rad * 0.72, rad, len, 7, 1, false);
+    const g = new THREE.CylinderGeometry(rad * 0.72, rad, len, depth >= 2 ? 6 : 4, 1, false);
     g.translate(0, len / 2, 0);
     g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(up, dir));
     g.translate(origin.x, origin.y, origin.z);
     parts.push(paint(g, (v, o) => o.copy(base).lerp(tip, Math.min(1, (v.y) / (size * 1.6)))));
     if (depth <= 0) {
-      const cap = new THREE.SphereGeometry(rad * 0.85, 7, 5); cap.translate(end.x, end.y, end.z);
+      const cap = new THREE.SphereGeometry(rad * 0.85, 5, 3); cap.translate(end.x, end.y, end.z);
       parts.push(paint(cap, (v, o) => o.copy(tip)));
       return;
     }
@@ -91,7 +103,31 @@ function branching(rand, color, size) {
   for (let i = 0; i < trunks; i++) {
     const o = new THREE.Vector3((rand() - 0.5) * size * 0.6, 0, (rand() - 0.5) * size * 0.6);
     const d = new THREE.Vector3((rand() - 0.5) * 0.6, 1, (rand() - 0.5) * 0.6).normalize();
-    grow(o, d, size * 0.45, size * 0.07, 3);
+    // tall colonies get longer, not fatter, branches
+    grow(o, d, size * 0.45, Math.min(size * 0.07, 0.11), 3);
+  }
+  return mergeGeometries(parts);
+}
+
+// Pillar coral: a clump of tall, knobbly upright columns.
+function pillar(h, rand, color) {
+  const parts = [];
+  const base = new THREE.Color(color), tip = base.clone().lerp(new THREE.Color(0xfff4e0), 0.35);
+  const n = 4 + Math.floor(rand() * 5);
+  for (let i = 0; i < n; i++) {
+    const a = rand() * Math.PI * 2, d = rand() * h * 0.22;
+    const ph = h * (0.45 + rand() * 0.55), r = h * (0.05 + rand() * 0.03);
+    const g = new THREE.CylinderGeometry(r * 0.85, r, ph, 8, 6);
+    const p = g.attributes.position;
+    for (let j = 0; j < p.count; j++) {
+      const k = 1 + 0.12 * Math.sin(p.getY(j) * 9 / h + a * 3) ;
+      p.setX(j, p.getX(j) * k); p.setZ(j, p.getZ(j) * k);
+    }
+    g.translate(Math.cos(a) * d, ph / 2, Math.sin(a) * d);
+    parts.push(paint(g, (v, o) => o.copy(base).lerp(tip, Math.min(1, v.y / h))));
+    const cap = new THREE.SphereGeometry(r * 0.85, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2);
+    cap.translate(Math.cos(a) * d, ph, Math.sin(a) * d);
+    parts.push(paint(cap, (v, o) => o.copy(tip)));
   }
   return mergeGeometries(parts);
 }
@@ -245,30 +281,50 @@ export function buildReef(scene) {
   const colors = [0xe0567a, 0xb05cd0, 0xff8a3c, 0xf2b6c8, 0x6fc0b8, 0xd94f4f];
   const clusters = [
     [-9, -6, 1.2], [5, -9, 1.1], [14, -3, 0.9], [-18, -14, 1.3], [0, -18, 1.4], [20, -16, 1.0], [-4, 2, 0.7], [-24, -2, 0.9], [11, -24, 1.2], [-12, -26, 1.1],
+    // added in M3.1: fill the gaps and the far reef so it reads as a reef, not islands
+    [-27, -20, 1.2], [27, -28, 1.2], [26, -6, 0.8], [-6, -32, 1.3], [17, -36, 1.2], [-20, -36, 1.1], [-15, -4, 0.7], [7, -30, 1.0],
   ];
   const place = (geo, x, z, rotY = 0, lift = 0) => {
     geo.rotateY(rotY);
     geo.translate(x, floorHeight(x, z) + lift, z);
     statics.push(geo);
   };
+  const rockTones = [0x8a7d6c, 0x7c7266, 0x948670];
   clusters.forEach(([cx, cz, s], ci) => {
     const rr = 1.6 * s + rand() * 0.6;
-    place(rock(rr, rand, 0x8a7d6c), cx, cz, rand() * 6, -0.2);
-    obstacles.push({ x: cx, y: floorHeight(cx, cz) + rr * 0.3, z: cz, r: rr * 1.35 });
-    const top = floorHeight(cx, cz) + rr * 0.55;
-    const n = 5 + Math.floor(rand() * 4);
+    const g0 = floorHeight(cx, cz);
+    place(rock(rr, rand, rockTones[ci % 3]), cx, cz, rand() * 6, -0.2);
+    obstacles.push({ x: cx, y: g0 + rr * 0.3, z: cz, r: rr * 1.35 });
+    // stack one or two smaller boulders on the base rock, so clusters stand up off the floor
+    let top = g0 + rr * 0.55;
+    const stack = s < 0.8 ? 0 : 1 + (rand() < 0.5 ? 1 : 0); // small foreground clusters stay low
+    for (let k = 0, r = rr; k < stack; k++) {
+      r *= 0.55 + rand() * 0.15;
+      const ox = (rand() - 0.5) * r * 0.8, oz = (rand() - 0.5) * r * 0.8;
+      const y = top - r * 0.15;
+      const g = rock(r, rand, rockTones[(ci + k + 1) % 3]);
+      g.rotateY(rand() * 6); g.translate(cx + ox, y, cz + oz); statics.push(g);
+      obstacles.push({ x: cx + ox, y: y + r * 0.3, z: cz + oz, r: r * 1.3 });
+      top = y + r * 0.6;
+    }
+    const n = 7 + Math.floor(rand() * 5);
     for (let i = 0; i < n; i++) {
-      const a = rand() * Math.PI * 2, d = rand() * rr * 1.3;
+      const a = rand() * Math.PI * 2, d = rand() * rr * 1.4;
       const x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d;
       const kind = rand();
+      // pieces near the middle of a cluster sit on the stack and are the tallest
+      const inner = d < rr * 0.5;
+      const tall = (inner ? 1.35 : 1) * (0.8 + rand() * 0.6);
       let g, h;
-      if (kind < 0.4) { h = (1.2 + rand() * 1.2) * s; g = branching(rand, colors[Math.floor(rand() * colors.length)], h); }
-      else if (kind < 0.62) { h = 0.8 * s; g = brain((0.6 + rand() * 0.5) * s, rand); }
+      if (kind < 0.32) { h = (1.3 + rand() * 1.2) * s * tall; g = branching(rand, colors[Math.floor(rand() * colors.length)], h); }
+      else if (kind < 0.46) { h = (2.2 + rand() * 1.8) * s * tall; g = pillar(h, rand, [0xe39a5c, 0xd0808a, 0xeab26a][Math.floor(rand() * 3)]); }
+      else if (kind < 0.62) { h = 0.8 * s; g = brain((0.6 + rand() * 0.6) * s, rand); }
       else if (kind < 0.8) { h = 1.2 * s; g = tableCoral((0.8 + rand() * 0.6) * s, [0x9fb878, 0xc8a87a, 0x7fa8a0][Math.floor(rand() * 3)]); }
-      else { h = (1.6 + rand()) * s; g = seaFan(h, rand, [0xa04ad0, 0xe0603a, 0xe8c040][Math.floor(rand() * 3)]); }
-      const lift = d < rr ? Math.max(0, top - floorHeight(x, z) - d * 0.35) : 0;
+      else { h = (1.8 + rand() * 1.4) * s * tall; g = seaFan(h, rand, [0xa04ad0, 0xe0603a, 0xe8c040][Math.floor(rand() * 3)]); }
+      const ground = floorHeight(x, z);
+      const lift = inner ? Math.max(0, top - ground - 0.15) : d < rr ? Math.max(0, g0 + rr * 0.55 - ground - d * 0.35) : 0;
       place(g, x, z, rand() * 6, lift);
-      obstacles.push({ x, y: floorHeight(x, z) + lift + h * 0.4, z, r: Math.max(0.6, h * 0.55) });
+      obstacles.push({ x, y: ground + lift + h * 0.4, z, r: Math.max(0.6, h * 0.55) });
     }
     if (ci < 3 || ci === 6) {
       const a = rand() * Math.PI * 2, d = rr * 0.9;
@@ -280,9 +336,9 @@ export function buildReef(scene) {
     }
   });
   // scattered small rocks and rubble
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 70; i++) {
     const x = -50 + rand() * 100, z = -50 + rand() * 60;
-    place(rock(0.2 + rand() * 0.5, rand, 0x9a8e7a), x, z, rand() * 6, -0.05);
+    place(rock(0.2 + rand() * 0.5, rand, 0x9a8e7a, 2), x, z, rand() * 6, -0.05);
   }
   const reefMat = patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75, metalness: 0 }), { caustic: 0.85 });
   const reef = new THREE.Mesh(mergeGeometries(statics), reefMat);

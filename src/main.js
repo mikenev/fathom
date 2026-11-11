@@ -208,7 +208,10 @@ function showHint(ms = 7000) {
 
 const toolbar = document.getElementById('toolbar');
 const tb = (act) => toolbar.querySelector(`[data-act=${act}]`);
-if (!fsSupported) tb('fullscreen').hidden = true;
+if (!fsSupported) {
+  tb('fullscreen').hidden = true;
+  for (const el of document.querySelectorAll('.fs-only')) el.hidden = true;
+}
 let toolbarTimer = 0;
 const toolbarShown = () => toolbar.classList.contains('show');
 function showToolbar(ms = 4500) {
@@ -468,6 +471,9 @@ window.fathom = Object.freeze({
   audioScene: () => audio.bed?.key ?? null,
   fps: () => fpsValue,
   camera: () => camera.position.toArray(),
+  tris: () => renderer.info.render.triangles,
+  // per fish: [species, roll, pitch] in radians, to check fish swim level
+  poses: () => SCENES[current].species.flatMap((k) => tank().groups[k].agents.map((a) => [k, a.roll ?? 0, a.pitch ?? 0])),
   get time() { return t; },
   snapshot: () => Object.fromEntries(SCENES[current].species.map((k) => [k, tank().groups[k].agents.map((a) => [a.pos.x, a.pos.y, a.pos.z])])),
 });
