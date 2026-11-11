@@ -15,6 +15,7 @@ export const SCENES = {
     fog: lin(0.12, 0.42, 0.52), density: 0.034, surf: [0.2, 0.62, 0.72], low: 0.55, ripple: 0.03,
     hemi: [0x9fe6f2, 0x6a5a40, 1.15], sun: [0xe8fbff, 1.6], fill: [0x3a8fb0, 0.45],
     rays: 1, caustics: 1, bounds: { minY: 0.6 }, schoolY: 5.5,
+    cam: { ax: 4, y: 5.2, ay: 0.8, z: 14, az: 1.4, k: 1, lx: 2.5, ly: 3.6 },
     build: (g) => buildReef(g),
   },
   ocean: {
@@ -23,6 +24,7 @@ export const SCENES = {
     fog: lin(0.03, 0.2, 0.42), density: 0.026, surf: [0.1, 0.45, 0.72], low: 0.3, ripple: 0.035,
     hemi: [0x8fd0f0, 0x0a2440, 1.1], sun: [0xe8fbff, 1.5], fill: [0x2a70b0, 0.4],
     rays: 1.15, caustics: 0.35, bounds: { minY: -5 }, schoolY: 5,
+    cam: { ax: 6, y: 5.6, ay: 1.2, z: 16, az: 2, k: 0.7, lx: 3.5, ly: 5 },
     build: buildOcean,
   },
   kelp: {
@@ -31,6 +33,7 @@ export const SCENES = {
     fog: lin(0.07, 0.27, 0.24), density: 0.04, surf: [0.24, 0.55, 0.44], low: 0.5, ripple: 0.03,
     hemi: [0xbfe8c8, 0x5a5030, 1.05], sun: [0xf2f8d8, 1.5], fill: [0x3a9080, 0.35],
     rays: 0.9, caustics: 0.8, bounds: { minY: 0.6 }, schoolY: 5,
+    cam: { ax: 3, y: 3.6, ay: 0.5, z: 13, az: 1, k: 0.85, lx: 2, ly: 3.2 },
     build: buildKelp,
   },
   deep: {
@@ -39,6 +42,7 @@ export const SCENES = {
     fog: lin(0.003, 0.009, 0.02), density: 0.042, surf: [0.008, 0.025, 0.05], low: 0.4, ripple: 0,
     hemi: [0x30507a, 0x000000, 0.4], sun: [0xbfd8ff, 0.06], fill: [0x2050a0, 0.3],
     rays: 0, caustics: 0, bounds: { minY: -5 }, schoolY: 5,
+    cam: { ax: 2, y: 5, ay: 0.4, z: 12, az: 0.8, k: 0.5, lx: 1.2, ly: 5 },
     build: buildDeep,
   },
 };
