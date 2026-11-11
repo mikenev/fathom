@@ -60,7 +60,9 @@ function applyLook(def) {
 
 const params = new URLSearchParams(location.search);
 let settings = Settings.load();
-if (SCENES[params.get('scene')]) settings.scene = params.get('scene'); // preview override, not saved
+let savedScene = settings.scene;
+if (SCENES[params.get('scene')]) settings.scene = params.get('scene'); // preview override, never saved
+const persist = () => Settings.save({ ...settings, scene: savedScene });
 let current = null;
 const tank = () => worlds[current].tank;
 
@@ -73,11 +75,11 @@ const sceneSelect = document.getElementById('scene-select');
 for (const k of SCENE_ORDER) sceneSelect.add(new Option(SCENES[k].label, k));
 function rebuildPanel() {
   sceneSelect.value = current;
-  Settings.buildPanel(document.getElementById('species-list'), settings, current, () => { Settings.save(settings); applySettings(); });
+  Settings.buildPanel(document.getElementById('species-list'), settings, current, () => { persist(); applySettings(); });
 }
 document.getElementById('reset-defaults').addEventListener('click', () => {
   Settings.resetScene(settings, current);
-  Settings.save(settings);
+  persist();
   rebuildPanel();
   applySettings();
 });
@@ -115,9 +117,13 @@ function fadedOut() {
 
 async function switchScene(key) {
   if (!SCENES[key]) return;
-  settings.scene = key;
-  Settings.save(settings);
-  if (key === current) return;
+  settings.scene = savedScene = key;
+  persist();
+  if (key === current) {
+    // switched back before the fade finished: cancel the pending swap
+    if (switching) { switchToken++; switching = false; fade.classList.remove('on'); }
+    return;
+  }
   const token = ++switchToken;
   switching = true;
   fade.classList.add('on');
@@ -223,7 +229,7 @@ function frame() {
 showScene(settings.scene);
 placeCamera(t);
 rafId = requestAnimationFrame(frame);
-requestAnimationFrame(() => requestAnimationFrame(() => fade.classList.remove('on')));
+requestAnimationFrame(() => requestAnimationFrame(() => { if (!switching) fade.classList.remove('on'); }));
 
 // Pause while the tab is hidden; resume without a jump.
 document.addEventListener('visibilitychange', () => {

@@ -281,9 +281,10 @@ export class Aquarium {
       const P = g.halo.geometry.attributes.position, S = g.halo.geometry.attributes.aSize;
       for (let i = 0; i < g.agents.length; i++) {
         const a = g.agents[i];
-        const o = tmp.copy(g.halo.userData.offset).multiplyScalar(a.size).applyQuaternion(a.quat).add(a.pos);
+        const k = smooth(Math.min(1, Math.max(0, a.scale))) * a.size;
+        const o = tmp.copy(g.halo.userData.offset).multiplyScalar(k).applyQuaternion(a.quat).add(a.pos);
         P.setXYZ(i, o.x, o.y, o.z);
-        S.setX(i, smooth(Math.min(1, Math.max(0, a.scale))) * a.size * g.halo.userData.size);
+        S.setX(i, k * g.halo.userData.size);
       }
       g.halo.geometry.setDrawRange(0, g.agents.length);
       P.needsUpdate = true; S.needsUpdate = true;

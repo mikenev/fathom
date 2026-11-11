@@ -48,8 +48,8 @@ export function patchMaterial(mat, opts = {}) {
       motion = `
         float h = max(transformed.y, 0.0);
         float s = sin(uTime * 0.9 + aPhase) * 0.6 + sin(uTime * 1.7 + aPhase * 1.3) * 0.25;
-        transformed.x += s * h * h * ${sway.toFixed(3)};
-        transformed.z += cos(uTime * 0.7 + aPhase * 0.8) * 0.4 * h * h * ${sway.toFixed(3)};
+        transformed.x += s * h * h * ${sway.toFixed(5)};
+        transformed.z += cos(uTime * 0.7 + aPhase * 0.8) * 0.4 * h * h * ${sway.toFixed(5)};
       `;
     }
     if (glow) motion += `
