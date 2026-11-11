@@ -156,7 +156,7 @@ export const SPECIES = {
   },
   blacktip: {
     label: 'Blacktip reef shark', role: 'Cruises the reef edge', swatch: '#8d9496',
-    defaultCount: 2, max: 4, behavior: 'cruise', speed: [1.6, 2.1], length: 3.6, wiggle: 0.07, freq: 2.2,
+    defaultCount: 2, max: 4, behavior: 'cruise', speed: [1.6, 2.1], length: 3.6, wiggle: 0.1, freq: 2.4,
     build() {
       const L = 3.6, H = 0.52, W = 0.5;
       const top = C(0x7f8784), side = C(0xa3a89f), belly = C(0xeef0ea), black = C(0x121414);
@@ -241,7 +241,7 @@ export const SPECIES = {
   },
   hammerhead: {
     label: 'Scalloped hammerhead', role: 'Cruises in a slow loop', swatch: '#8a8a7c',
-    defaultCount: 2, max: 4, behavior: 'cruise', speed: [1.5, 2.0], length: 3.9, wiggle: 0.07, freq: 2.0,
+    defaultCount: 2, max: 4, behavior: 'cruise', speed: [1.5, 2.0], length: 3.9, wiggle: 0.1, freq: 2.2,
     mat: { roughness: 0.55 }, path: { y: 7.5, yAmp: 2.0, rx: 22, rz: 11, cz: -13 },
     build() {
       const top = C(0x6e6f64), side = C(0x9a9a8c), belly = C(0xeceee6);
@@ -311,8 +311,8 @@ export const SPECIES = {
   },
   leopardShark: {
     label: 'Leopard shark', role: 'Cruises the sandy bottom', swatch: '#9a8a6a',
-    defaultCount: 2, max: 4, behavior: 'cruise', speed: [1.1, 1.5], length: 2.8, wiggle: 0.09, freq: 2.4,
-    mat: { roughness: 0.6 }, path: { bottom: 1.0, yAmp: 0.35, rx: 18, rz: 9, cz: -11 },
+    defaultCount: 2, max: 4, behavior: 'cruise', speed: [1.1, 1.5], length: 2.8, wiggle: 0.115, freq: 2.6,
+    mat: { roughness: 0.6 }, path: { bottom: 1.0, yAmp: 0.35, dive: 0.5, rx: 18, rz: 9, cz: -11 },
     build() {
       const top = C(0x8c7e62), belly = C(0xece6d6), dark = C(0x2a2018);
       const col = (p, o, { t, yn }) => {
@@ -399,7 +399,7 @@ export const SPECIES = {
   },
   lanternshark: {
     label: 'Velvet-belly lanternshark', role: 'Glowing cruise', swatch: '#4fd0ff',
-    defaultCount: 2, max: 4, behavior: 'cruise', speed: [0.9, 1.3], length: 1.7, wiggle: 0.09, freq: 2.8,
+    defaultCount: 2, max: 4, behavior: 'cruise', speed: [0.9, 1.3], length: 1.7, wiggle: 0.115, freq: 3.0,
     glow: 0x3fc8ff, mat: { roughness: 0.7 }, path: { y: 5.5, yAmp: 1.6, rx: 14, rz: 8, cz: -9 },
     build() {
       const L = 1.7, H = 0.26, W = 0.26;

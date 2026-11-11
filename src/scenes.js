@@ -51,6 +51,11 @@ export const SCENE_ORDER = ['reef', 'ocean', 'kelp', 'deep'];
 function buildOcean(group) {
   // open blue water: no floor in view, just drifting motes for depth
   group.add(particles(1100, new THREE.Vector3(90, 30, 64), { seed: 9, origin: new THREE.Vector3(-45, -8, -52), vel: new THREE.Vector3(0.14, 0.02, 0.05), size: 0.8, color: 0xc8e8f8, alpha: 0.26 }));
+  bubbles(group, {
+    seed: 41, y0: -8, height: 30, color: 0xe8f8ff, alpha: 1.5,
+    columns: [[-13, -10], [8, -6], [19, -20], [-24, -26], [3, -30]],
+    scatter: { count: 260, size: 4.5, alpha: 0.9 },
+  });
   return { homes: [], obstacles: [], floor: noFloor };
 }
 
@@ -142,9 +147,26 @@ function buildKelp(group) {
   return { homes, obstacles, floor: kelpFloor };
 }
 
+// Rising bubble streams plus loose bubbles drifting up through the whole view.
+// All of it is GPU points (one draw call per stream), so it costs next to nothing.
+function bubbles(group, o) {
+  const sp = o.speed ?? 1;
+  o.columns.forEach(([x, z], i) => {
+    group.add(particles(56, new THREE.Vector3(1.2, o.height, 1.2), { seed: o.seed + i * 7, origin: new THREE.Vector3(x - 0.6, o.y0, z - 0.6), vel: new THREE.Vector3(0, 1.2 * sp, 0), size: 6.5, color: o.color, alpha: o.alpha, ring: true }));
+  });
+  const S = o.scatter;
+  group.add(particles(S.count, new THREE.Vector3(80, o.height, 56), { seed: o.seed + 100, origin: new THREE.Vector3(-40, o.y0, -50), vel: new THREE.Vector3(0.05, 0.45 * sp, 0.02), size: S.size, color: o.color, alpha: S.alpha, ring: true }));
+}
+
 function buildDeep(group) {
   // marine snow drifting down, plus a few faint specks of free-floating glow
   group.add(particles(1800, new THREE.Vector3(80, 28, 60), { seed: 21, origin: new THREE.Vector3(-40, -6, -48), vel: new THREE.Vector3(0.02, -0.2, 0.01), size: 1.0, color: 0xdde8ee, alpha: 0.5 }));
   group.add(particles(70, new THREE.Vector3(70, 24, 50), { seed: 33, origin: new THREE.Vector3(-35, -4, -44), vel: new THREE.Vector3(0.03, 0.01, -0.02), size: 0.7, color: 0x5fd8ff, alpha: 0.8 }));
+  // gas seeping up from somewhere below: faint, slow, catching what little light there is
+  bubbles(group, {
+    seed: 57, y0: -8, height: 28, color: 0x9fc8e8, alpha: 1.4, speed: 0.75,
+    columns: [[-9, -8], [12, -16], [-22, -24]],
+    scatter: { count: 140, size: 4, alpha: 0.9 },
+  });
   return { homes: [], obstacles: [], floor: noFloor };
 }

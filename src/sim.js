@@ -5,7 +5,14 @@ import { patchMaterial, shared } from './shaders.js';
 const BOUNDS = { minX: -30, maxX: 30, minY: 0.6, maxY: 15, minZ: -32, maxZ: 6 };
 const SCHOOL = { radius: 5, sep: 0.75, coh: 0.5, pull: 0.12 };
 const PATH = { y: 3.2, yAmp: 1.6, rx: 21, rz: 11, cz: -12 };
-const schoolC = new THREE.Vector3(), tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3(), dummy = new THREE.Object3D(), mat4 = new THREE.Matrix4();
+const schoolC = new THREE.Vector3(), tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3(), mat4 = new THREE.Matrix4(), euler = new THREE.Euler(0, 0, 0, 'YXZ');
+const wrapAngle = (x) => Math.atan2(Math.sin(x), Math.cos(x));
+// How far each kind of swimmer may roll into a turn and nose up or down (radians).
+// Small fish stay almost level; sharks bank a little more, the way big fish carve a turn.
+const POSE = {
+  fish: { roll: 0.1, rollGain: 0.09, pitch: 0.26, pitchEase: 0.55, turn: 4 },
+  cruise: { roll: 0.3, rollGain: 1.1, pitch: 0.2, pitchEase: 0.7, turn: 2.5 },
+};
 const smooth = (x) => x * x * (3 - 2 * x);
 
 // Sum of slow sines: smooth, never repeating within a viewing session.
@@ -116,16 +123,22 @@ export class Aquarium {
       leaving: false,
       home,
       size: (sp.behavior === 'cruise' ? 1 : sp.scale ?? 1.45) * (0.85 + r() * 0.3),
-      bank: 0,
+      roll: 0,
+      pitch: 0,
+      yaw: 0,
     };
     if (sp.behavior === 'cruise') {
       a.path = { ...PATH, ...(sp.path || {}) };
       a.loop = { dir: i % 2 ? -1 : 1, theta: r() * 6.28, cx: (r() - 0.5) * 6, cz: a.path.cz - r() * 4, seed: r() * 10 };
       a.size = 0.95 + r() * 0.1;
       a.pos.copy(this.cruisePoint(a, 0));
+      // face along the path from the first frame, not a random spawn heading
+      const th = a.loop.theta; a.loop.theta += 0.01 * a.loop.dir;
+      a.vel.copy(this.cruisePoint(a, 0)).sub(a.pos).setLength(a.cruise);
+      a.loop.theta = th;
     }
-    tmp.copy(a.vel).normalize();
-    dummy.position.set(0, 0, 0); dummy.lookAt(tmp); a.quat.copy(dummy.quaternion);
+    a.yaw = Math.atan2(a.vel.x, a.vel.z);
+    a.quat.setFromEuler(euler.set(0, a.yaw, 0));
     return a;
   }
 
@@ -134,9 +147,11 @@ export class Aquarium {
     const L = a.loop, s = L.seed, P = a.path;
     const rx = P.rx + 4 * Math.sin(t * 0.021 + s), rz = P.rz + 3 * Math.cos(t * 0.017 + s * 1.7);
     const th = L.theta;
-    const x = L.cx + Math.cos(th) * rx;
+    // a lazy side-to-side meander on top of the loop, so the shark turns and banks
+    const x = L.cx + Math.cos(th) * rx + 1.4 * Math.sin(th * 5 + s * 3);
     const z = L.cz + Math.sin(th) * rz + 4 * Math.sin(t * 0.011 + s) * Math.max(0, Math.sin(th));
-    const bob = P.yAmp * Math.sin(t * 0.043 + s * 2.1) + P.yAmp * 0.5 * Math.sin(th * 2 + s);
+    // slow depth changes: a long swell plus an occasional gentle dive or climb
+    const bob = P.yAmp * Math.sin(t * 0.043 + s * 2.1) + P.yAmp * 0.5 * Math.sin(th * 2 + s) + (P.dive ?? 1) * Math.sin(t * 0.09 + s * 4.3) * Math.sin(th * 3 + s * 2);
     const y = P.bottom != null ? this.floor(x, z) + P.bottom + Math.abs(bob) : P.y + bob;
     return new THREE.Vector3(x, y, z);
   }
@@ -167,10 +182,12 @@ export class Aquarium {
     const before = this.cruisePoint(a, t);
     const ahead = (() => { const th = L.theta; L.theta += 0.01 * L.dir; const p = this.cruisePoint(a, t); L.theta = th; return p; })();
     const arc = Math.max(0.01, ahead.distanceTo(before) / 0.01);
-    L.theta += (a.cruise / arc) * dt * L.dir;
+    // cruise speed drifts: short glides and gentle surges
+    const speed = a.cruise * (1 + 0.22 * Math.sin(t * 0.23 + L.seed * 5) + 0.1 * Math.sin(t * 0.61 + L.seed * 9));
+    L.theta += (speed / arc) * dt * L.dir;
     const p = this.cruisePoint(a, t);
     a.vel.copy(p).sub(a.pos).divideScalar(Math.max(dt, 1e-4));
-    if (a.vel.lengthSq() > 9) a.vel.setLength(a.cruise);
+    if (a.vel.lengthSq() > 12) a.vel.setLength(speed);
     a.pos.copy(p);
   }
 
@@ -259,15 +276,21 @@ export class Aquarium {
       const speed = a.vel.length();
       tmp.copy(a.vel).normalize();
       if (speed > 1e-3) {
-        dummy.position.set(0, 0, 0);
-        dummy.up.set(0, 1, 0);
-        dummy.lookAt(tmp);
-        // bank into turns
-        const prevFwd = tmp2.set(0, 0, 1).applyQuaternion(a.quat);
-        const turn = prevFwd.x * tmp.z - prevFwd.z * tmp.x;
-        a.bank += (THREE.MathUtils.clamp(-turn * 6, -0.5, 0.5) - a.bank) * Math.min(1, dt * 2);
-        dummy.rotateZ(a.bank);
-        a.quat.slerp(dummy.quaternion, 1 - Math.exp(-dt * (sp.behavior === 'cruise' ? 2.5 : 4)));
+        // Heading from the velocity, built as yaw, then a limited pitch, then a small roll,
+        // so bodies stay level with the swim direction instead of tilting on the z axis.
+        const P = sp.behavior === 'cruise' ? POSE.cruise : POSE.fish;
+        const k = 1 - Math.exp(-dt * P.turn);
+        const dyaw = wrapAngle(Math.atan2(a.vel.x, a.vel.z) - a.yaw) * k;
+        a.yaw = wrapAngle(a.yaw + dyaw);
+        const yawRate = dyaw / Math.max(dt, 1e-4);
+        const horiz = Math.hypot(a.vel.x, a.vel.z);
+        const pitch = THREE.MathUtils.clamp(-Math.atan2(a.vel.y, horiz) * P.pitchEase, -P.pitch, P.pitch);
+        a.pitch += (pitch - a.pitch) * k;
+        const roll = THREE.MathUtils.clamp(-yawRate * P.rollGain, -P.roll, P.roll);
+        a.roll += (roll - a.roll) * (1 - Math.exp(-dt * 2));
+        // sharks swing their head a little with each tail beat
+        const swing = sp.behavior === 'cruise' ? Math.sin(a.phase - 1.0) * 0.045 : 0;
+        a.quat.setFromEuler(euler.set(a.pitch, a.yaw + swing, a.roll));
       }
       a.phase += dt * sp.freq * (0.55 + 0.45 * speed / sp.speed[1]);
       g.phase.array[i] = a.phase;
