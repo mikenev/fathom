@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fathom</title>
+<meta name="description" content="Fathom: a calm fullscreen browser aquarium.">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="./style.css">
+<script type="importmap">
+{ "imports": { "three": "./vendor/three/three.module.min.js" } }
+</script>
+</head>
+<body>
+<canvas id="view" aria-label="Fathom aquarium"></canvas>
+<div id="hint" class="hint" role="status">Press <kbd>F</kbd> for fullscreen &middot; <kbd>S</kbd> for settings</div>
+<section id="settings" class="settings" hidden aria-label="Settings">
+  <header>
+    <h1>Fathom</h1>
+    <p class="sub">Settings</p>
+  </header>
+  <label class="row">
+    <span>Scene</span>
+    <select id="scene-select">
+      <option value="reef" selected>Tropical coral reef</option>
+    </select>
+  </label>
+  <h2>Species</h2>
+  <div id="species-list"></div>
+  <div class="actions">
+    <button id="reset-defaults" type="button">Reset to reef preset</button>
+  </div>
+  <footer><kbd>S</kbd> or <kbd>Esc</kbd> closes &middot; <kbd>F</kbd> fullscreen</footer>
+</section>
+<noscript><p class="noscript">Fathom needs JavaScript and WebGL.</p></noscript>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
