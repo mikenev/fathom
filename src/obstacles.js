@@ -29,6 +29,41 @@ export function fitShape(geo, kind, x, z, base, pad = 1.04) {
   return dome(x, z, base, R * k * pad, top * k * pad);
 }
 
+// A table coral: a stem column and a flat plate (a column section that ends at both faces).
+export function fitTable(geo, x, z, base, pad = 1.04) {
+  const p = geo.attributes.position;
+  let R = 1e-3, top = 1e-3;
+  for (let i = 0; i < p.count; i++) { R = Math.max(R, Math.hypot(p.getX(i), p.getZ(i))); top = Math.max(top, p.getY(i)); }
+  // the plate is everything out past half the radius; the stem is what stands under it
+  let lo = top, stem = 1e-3;
+  for (let i = 0; i < p.count; i++) if (Math.hypot(p.getX(i), p.getZ(i)) > R * 0.5) lo = Math.min(lo, p.getY(i));
+  // only what stands below the plate counts toward the stem, not the plate's own inner rings
+  for (let i = 0; i < p.count; i++) if (p.getY(i) < lo) stem = Math.max(stem, Math.hypot(p.getX(i), p.getZ(i)));
+  const plate = cyl(x, z, base + top + 0.02, R * pad, base + lo - 0.02);
+  plate.face = true;
+  return [cyl(x, z, base + lo, stem * pad + 0.02), plate];
+}
+
+// A sea fan is flat (its branches lie in the x-y plane before it is turned by rotY), so it is
+// a row of slim columns along its width rather than one column as wide as the whole fan.
+export function fitFan(geo, x, z, base, rotY, bins = 4, pad = 1.04) {
+  const p = geo.attributes.position;
+  let x0 = Infinity, x1 = -Infinity, thick = 1e-3;
+  for (let i = 0; i < p.count; i++) { x0 = Math.min(x0, p.getX(i)); x1 = Math.max(x1, p.getX(i)); thick = Math.max(thick, Math.abs(p.getZ(i))); }
+  const w = (x1 - x0) / bins || 1e-3, tops = new Array(bins).fill(-Infinity);
+  for (let i = 0; i < p.count; i++) {
+    const b = Math.min(bins - 1, Math.floor((p.getX(i) - x0) / w));
+    tops[b] = Math.max(tops[b], p.getY(i));
+  }
+  const c = Math.cos(rotY), s = Math.sin(rotY), out = [];
+  for (let b = 0; b < bins; b++) {
+    if (tops[b] === -Infinity) continue;
+    const u = x0 + (b + 0.5) * w; // three.js rotateY: (u, 0) goes to (u cos, -u sin)
+    out.push(cyl(x + u * c, z - u * s, base + tops[b] * pad, Math.hypot(w / 2, thick) * pad));
+  }
+  return out;
+}
+
 // Distance from (x, y, z) to one shape; writes the outward normal into n.
 function shapeDist(s, x, y, z, n) {
   const dx = x - s.x, dz = z - s.z, rho = Math.hypot(dx, dz);
@@ -38,8 +73,9 @@ function shapeDist(s, x, y, z, n) {
     // a column from lo (usually under the sand) to its top
     const dr = rho - s.R, db = s.lo - y, dv = Math.max(dy, db), sy = dy > db ? 1 : -1;
     if (dr <= 0 && dv <= 0) { // inside: leave by the nearest face, or always sideways for a
-      // stacked section (kelp), so neighbouring sections never push a fish back and forth
-      if (dr > dv || s.lo > -Infinity) { n.x = hx; n.y = 0; n.z = hz; return dr; }
+      // stacked section (kelp), so neighbouring sections never push a fish back and forth;
+      // a flat plate (face) is left by its top or bottom when that is nearer
+      if (dr > dv || (s.lo > -Infinity && !s.face)) { n.x = hx; n.y = 0; n.z = hz; return dr; }
       n.x = 0; n.y = sy; n.z = 0; return dv;
     }
     if (dv <= 0) { n.x = hx; n.y = 0; n.z = hz; return dr; }
