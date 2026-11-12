@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries, paint, rng } from './geo.js';
 import { patchMaterial, shared } from './shaders.js';
-import { Field, fitShape, CYL, DOME } from './obstacles.js';
+import { Field, fitShape, fitTable, fitFan, CYL, DOME } from './obstacles.js';
 
 export function floorHeight(x, z) {
   return -0.4
@@ -285,8 +285,14 @@ export function buildReef(scene) {
     // added in M3.1: fill the gaps and the far reef so it reads as a reef, not islands
     [-27, -20, 1.2], [27, -28, 1.2], [26, -6, 0.8], [-6, -32, 1.3], [17, -36, 1.2], [-20, -36, 1.1], [-15, -4, 0.7], [7, -30, 1.0],
   ];
+  const TABLE = 'table', FAN = 'fan';
   const place = (geo, x, z, rotY = 0, lift = 0, kind = null) => {
-    if (kind !== null) obstacles.push(fitShape(geo, kind, x, z, floorHeight(x, z) + lift));
+    const base = floorHeight(x, z) + lift;
+    // a table coral is a thin stem under a flat plate, a sea fan a flat screen: fit each closely
+    // instead of one solid column, so fish swim under tables and past the edge of a fan
+    if (kind === TABLE) obstacles.push(...fitTable(geo, x, z, base));
+    else if (kind === FAN) obstacles.push(...fitFan(geo, x, z, base, rotY));
+    else if (kind !== null) obstacles.push(fitShape(geo, kind, x, z, base));
     geo.rotateY(rotY);
     geo.translate(x, floorHeight(x, z) + lift, z);
     statics.push(geo);
@@ -324,7 +330,7 @@ export function buildReef(scene) {
       else { h = (1.8 + rand() * 1.4) * s * tall; g = seaFan(h, rand, [0xa04ad0, 0xe0603a, 0xe8c040][Math.floor(rand() * 3)]); }
       const ground = floorHeight(x, z);
       const lift = inner ? Math.max(0, top - ground - 0.15) : d < rr ? Math.max(0, g0 + rr * 0.55 - ground - d * 0.35) : 0;
-      place(g, x, z, rand() * 6, lift, kind >= 0.46 && kind < 0.62 ? DOME : CYL);
+      place(g, x, z, rand() * 6, lift, kind < 0.46 ? CYL : kind < 0.62 ? DOME : kind < 0.8 ? TABLE : FAN);
     }
     if (ci < 3 || ci === 6) {
       const a = rand() * Math.PI * 2;
@@ -347,7 +353,8 @@ export function buildReef(scene) {
     }
     an.position.set(x, floorHeight(x, z) - 0.05, z);
     scene.add(an);
-    anemones.push(new THREE.Vector3(x, floorHeight(x, z) + 0.5, z));
+    // the home carries its anemone, so if the sim nudges the home the anemone moves with it
+    anemones.push(Object.assign(new THREE.Vector3(x, floorHeight(x, z) + 0.5, z), { mesh: an, meshDrop: -0.05 }));
   }
   const reefMat = patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75, metalness: 0 }), { caustic: 0.85 });
   const reef = new THREE.Mesh(mergeGeometries(statics), reefMat);
