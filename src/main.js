@@ -475,5 +475,38 @@ window.fathom = Object.freeze({
   // per fish: [species, roll, pitch] in radians, to check fish swim level
   poses: () => SCENES[current].species.flatMap((k) => tank().groups[k].agents.map((a) => [k, a.roll ?? 0, a.pitch ?? 0])),
   get time() { return t; },
+  // QA only (?qa=1): run the visible scene's sim for `seconds` without drawing, optionally with every
+  // species at its maximum, and report how deep any body got into rock, coral, kelp or the seabed,
+  // plus the biggest step and turn in a single frame, to catch snapping and jitter.
+  soak: (seconds, dt = 1 / 60, max = false) => {
+    if (!new URLSearchParams(location.search).has('qa')) return null;
+    const tk = tank(), keys = SCENES[current].species;
+    if (max) for (const k of keys) tk.setTarget(k, tk.groups[k].sp.max, true);
+    let time = tk.time, frames = 0, bad = 0, worst = 0, jump = 0, turn = 0, n = 0, flips = 0, jumpWho = '', turnWho = '', flipAt = null;
+    const flipWho = {};
+    const prev = new Map();
+    for (let f = 0; f < seconds / dt; f++) {
+      time += dt; tk.update(dt, time); frames++;
+      let hit = false;
+      for (const k of keys) for (const a of tk.groups[k].agents) {
+        n++;
+        const p = tk.penetration ? tk.penetration(a) : 0;
+        if (p > 1e-3) { hit = true; worst = Math.max(worst, p); }
+        const q = prev.get(a);
+        if (q && a.scale > 0.5) {
+          const v = Math.max(a.vel.length(), 0.3);
+          const j = Math.hypot(a.pos.x - q[0], a.pos.y - q[1], a.pos.z - q[2]) / (v * dt);
+          if (j > jump) { jump = j; jumpWho = k; }
+          const w = Math.atan2(Math.sin(a.yaw - q[3]), Math.cos(a.yaw - q[3])) / dt;
+          if (Math.abs(w) > turn) { turn = Math.abs(w); turnWho = k; }
+          // jitter: the turn rate flipping hard from one side to the other between frames
+          if (q[4] * w < 0 && Math.abs(q[4]) > 1 && Math.abs(w) > 1) { flips++; flipWho[k] = (flipWho[k] || 0) + 1; if (!flipAt) flipAt = [k, +time.toFixed(2), +a.pos.x.toFixed(2), +a.pos.y.toFixed(2), +a.pos.z.toFixed(2)]; }
+          q[0] = a.pos.x; q[1] = a.pos.y; q[2] = a.pos.z; q[3] = a.yaw; q[4] = w;
+        } else prev.set(a, [a.pos.x, a.pos.y, a.pos.z, a.yaw, 0]);
+      }
+      if (hit) bad++;
+    }
+    return { frames, bad, worst, jump, turn, flips, flipWho, flipAt, jumpWho, turnWho, checks: n, shapes: tk.field?.shapes.length ?? 0 };
+  },
   snapshot: () => Object.fromEntries(SCENES[current].species.map((k) => [k, tank().groups[k].agents.map((a) => [a.pos.x, a.pos.y, a.pos.z])])),
 });

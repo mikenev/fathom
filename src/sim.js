@@ -1,19 +1,36 @@
 import * as THREE from 'three';
 import { SPECIES } from './fish.js';
 import { patchMaterial, shared } from './shaders.js';
+import { Field } from './obstacles.js';
 
 const BOUNDS = { minX: -30, maxX: 30, minY: 0.6, maxY: 15, minZ: -32, maxZ: 6 };
 const SCHOOL = { radius: 5, sep: 0.75, coh: 0.5, pull: 0.12 };
 const PATH = { y: 3.2, yAmp: 1.6, rx: 21, rz: 11, cz: -12 };
 const schoolC = new THREE.Vector3(), tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3(), mat4 = new THREE.Matrix4(), euler = new THREE.Euler(0, 0, 0, 'YXZ');
+// scratch space, so the per-frame sim allocates nothing
+const vDesired = new THREE.Vector3(), vCoh = new THREE.Vector3(), vAli = new THREE.Vector3(), vSep = new THREE.Vector3();
+const vA = new THREE.Vector3(), vB = new THREE.Vector3(), vSteer = new THREE.Vector3();
+const nrm = { x: 0, y: 0, z: 0 }, nrm2 = { x: 0, y: 0, z: 0 };
+// Body size for collisions, as fractions of a species' length: half its thickness, and how far
+// the head and tail reach from the middle. Collision checks use the head, middle and tail.
+const BODY = { radius: 0.13, reach: 0.42 };
+const SHARK_TURN = 0.9; // radians per second
+// How each kind of swimmer looks ahead and steers around rock, coral, kelp and the seabed.
+// look: seconds of travel ahead plus a fraction of body length; band: how close before it reacts;
+// floor: the same for the seabed, kept small so bottom swimmers can still hug it.
+const AVOID = {
+  fish: { look: 0.6, lookLen: 0.5, band: 0.9, gain: 3.2, room: 0.25, floor: 0.35 },
+  cruise: { look: 1.4, lookLen: 0.6, band: 2.2, gain: 2.6, room: 0.8, floor: 0.5 },
+};
 const wrapAngle = (x) => Math.atan2(Math.sin(x), Math.cos(x));
 // How far each kind of swimmer may roll into a turn and nose up or down (radians).
 // Small fish stay almost level; sharks bank a little more, the way big fish carve a turn.
 const POSE = {
   fish: { roll: 0.1, rollGain: 0.09, pitch: 0.26, pitchEase: 0.55, turn: 4 },
-  cruise: { roll: 0.3, rollGain: 1.1, pitch: 0.2, pitchEase: 0.7, turn: 2.5 },
+  cruise: { roll: 0.3, rollGain: 1.1, pitch: 0.2, pitchEase: 0.7, turn: 5 },
 };
 const smooth = (x) => x * x * (3 - 2 * x);
+const soft = (v, lo, hi, w) => (v < lo + w ? (lo + w - v) / w : 0) - (v > hi - w ? (v - (hi - w)) / w : 0);
 
 // Sum of slow sines: smooth, never repeating within a viewing session.
 function noise(t, s) {
@@ -55,6 +72,11 @@ export class Aquarium {
     this.scene = scene;
     this.reef = env;
     this.floor = env.floor;
+    // every solid thing in the scene, for collision and avoidance
+    this.field = new Field(env.floor, env.obstacles || []);
+    // a home a fish keeps returning to must have room around it
+    for (const h of env.homes || []) this.field.clear(h, 0.55, 0.45);
+    this._sharks = [];
     this.B = { ...BOUNDS, ...(def.bounds || {}) };
     this.schoolY = def.schoolY ?? 5.5;
     this.order = def.species;
@@ -98,12 +120,14 @@ export class Aquarium {
 
   randomSpawn(sp, back, home) {
     const rand = this.rand, B = this.B;
-    if (home) return new THREE.Vector3(home.x + (rand() - 0.5) * 2, home.y + rand() * 1.2, home.z + (rand() - 0.5) * 2);
+    // room for the whole body (head to tail), not just its middle
+    const room = sp.length * 0.75 + 0.15;
+    if (home) return this.field.clear(new THREE.Vector3(home.x + (rand() - 0.5) * 2, home.y + rand() * 1.2, home.z + (rand() - 0.5) * 2), room, room);
     const x = B.minX + rand() * (B.maxX - B.minX);
     const z = back ? B.minZ + 1 + rand() * 6 : B.minZ + rand() * (B.maxZ - B.minZ - 6);
     const ground = Math.max(B.minY, this.floor(x, z));
     const y = sp.behavior === 'school' ? this.schoolY - 0.5 + rand() * 5 : ground + 1.5 + rand() * 5;
-    return new THREE.Vector3(x, y, z);
+    return this.field.clear(new THREE.Vector3(x, y, z), room, room);
   }
 
   spawn(g, instant) {
@@ -126,16 +150,20 @@ export class Aquarium {
       roll: 0,
       pitch: 0,
       yaw: 0,
+      sp,
+      len: sp.length,
     };
     if (sp.behavior === 'cruise') {
       a.path = { ...PATH, ...(sp.path || {}) };
       a.loop = { dir: i % 2 ? -1 : 1, theta: r() * 6.28, cx: (r() - 0.5) * 6, cz: a.path.cz - r() * 4, seed: r() * 10 };
       a.size = 0.95 + r() * 0.1;
-      a.pos.copy(this.cruisePoint(a, 0));
-      // face along the path from the first frame, not a random spawn heading
-      const th = a.loop.theta; a.loop.theta += 0.01 * a.loop.dir;
-      a.vel.copy(this.cruisePoint(a, 0)).sub(a.pos).setLength(a.cruise);
-      a.loop.theta = th;
+      a.carrot = new THREE.Vector3();
+      a.pos.copy(this.cruiseTarget(a, 0, a.carrot));
+      // the shark chases a point a little ahead on its loop, and faces it from the first frame
+      const L = a.loop, lead = this.lead(sp);
+      for (let k = 0; k < 400 && this.cruiseTarget(a, 0, a.carrot).distanceTo(a.pos) < lead; k++) L.theta += 0.01 * L.dir;
+      a.vel.copy(a.carrot).sub(a.pos).setLength(a.cruise);
+      this.field.clear(a.pos, sp.length * (BODY.reach + BODY.radius) * a.size + 0.1);
     }
     a.yaw = Math.atan2(a.vel.x, a.vel.z);
     a.quat.setFromEuler(euler.set(0, a.yaw, 0));
@@ -143,7 +171,8 @@ export class Aquarium {
   }
 
   // A slowly breathing ellipse. Bottom cruisers (path.bottom) follow the floor instead of a fixed depth.
-  cruisePoint(a, t) {
+  // Writes into out, so nothing is allocated per frame.
+  cruisePoint(a, t, out) {
     const L = a.loop, s = L.seed, P = a.path;
     const rx = P.rx + 4 * Math.sin(t * 0.021 + s), rz = P.rz + 3 * Math.cos(t * 0.017 + s * 1.7);
     const th = L.theta;
@@ -153,13 +182,25 @@ export class Aquarium {
     // slow depth changes: a long swell plus an occasional gentle dive or climb
     const bob = P.yAmp * Math.sin(t * 0.043 + s * 2.1) + P.yAmp * 0.5 * Math.sin(th * 2 + s) + (P.dive ?? 1) * Math.sin(t * 0.09 + s * 4.3) * Math.sin(th * 3 + s * 2);
     const y = P.bottom != null ? this.floor(x, z) + P.bottom + Math.abs(bob) : P.y + bob;
-    return new THREE.Vector3(x, y, z);
+    return out.set(x, y, z);
   }
+
+  // A point on the loop, moved clear of the seabed and every rock, coral and kelp stipe,
+  // with room for the shark's body, so a shark is never led into anything.
+  cruiseTarget(a, t, out) {
+    const room = a.path.room ?? 0;
+    const r = this.bodyRadius(a) + 0.6 + room;
+    return this.field.clear(this.cruisePoint(a, t, out), r, r);
+  }
+
+  lead(sp) { return Math.max(2.5, sp.length * 0.8); }
+  bodyRadius(a) { return a.len * a.size * BODY.radius; }
 
   update(dt, t) {
     this.time = t;
-    const sharks = [];
-    for (const key of this.order) if (this.groups[key].sp.behavior === 'cruise') sharks.push(...this.groups[key].agents);
+    const sharks = this._sharks;
+    sharks.length = 0;
+    for (const key of this.order) if (this.groups[key].sp.behavior === 'cruise') for (const s of this.groups[key].agents) sharks.push(s);
     for (const key of this.order) {
       const g = this.groups[key];
       const sp = g.sp;
@@ -178,27 +219,124 @@ export class Aquarium {
   }
 
   stepCruise(a, dt, t) {
-    const L = a.loop;
-    const before = this.cruisePoint(a, t);
-    const ahead = (() => { const th = L.theta; L.theta += 0.01 * L.dir; const p = this.cruisePoint(a, t); L.theta = th; return p; })();
-    const arc = Math.max(0.01, ahead.distanceTo(before) / 0.01);
+    const L = a.loop, sp = a.sp;
+    // advance the target along the loop at the shark's cruise speed, easing off if the shark falls behind
+    const before = this.cruisePoint(a, t, vA);
+    const th = L.theta; L.theta += 0.01 * L.dir;
+    const arc = Math.max(0.01, this.cruisePoint(a, t, vB).distanceTo(before) / 0.01);
+    L.theta = th;
     // cruise speed drifts: short glides and gentle surges
     const speed = a.cruise * (1 + 0.22 * Math.sin(t * 0.23 + L.seed * 5) + 0.1 * Math.sin(t * 0.61 + L.seed * 9));
-    L.theta += (speed / arc) * dt * L.dir;
-    const p = this.cruisePoint(a, t);
-    a.vel.copy(p).sub(a.pos).divideScalar(Math.max(dt, 1e-4));
-    if (a.vel.lengthSq() > 12) a.vel.setLength(speed);
-    a.pos.copy(p);
+    const lead = this.lead(sp), gap = a.carrot.distanceTo(a.pos);
+    L.theta += (speed / arc) * dt * L.dir * THREE.MathUtils.clamp(2 - gap / lead, 0.2, 1.4);
+    this.cruiseTarget(a, t, a.carrot);
+    // steer toward it like a fish would, so turns stay smooth when the target bends around a rock
+    const acc = vSteer.copy(a.carrot).sub(a.pos).setLength(speed).sub(a.vel).multiplyScalar(1.6);
+    if (acc.length() > 2.0) acc.setLength(2.0);
+    this.avoid(a, acc, AVOID.cruise);
+    const h0 = Math.atan2(a.vel.x, a.vel.z);
+    a.vel.addScaledVector(acc, dt);
+    // a big body turns at a steady rate, never whipping round, so head and tail stay where the
+    // sim thinks they are and swing wide of things instead of into them
+    const hz = Math.hypot(a.vel.x, a.vel.z), turn = SHARK_TURN * dt;
+    const dh = wrapAngle(Math.atan2(a.vel.x, a.vel.z) - h0);
+    if (Math.abs(dh) > turn) { const h = h0 + Math.sign(dh) * turn; a.vel.x = Math.sin(h) * hz; a.vel.z = Math.cos(h) * hz; }
+    // climb and dive no steeper than the body can pitch, so head and tail follow the real path
+    const horiz = Math.hypot(a.vel.x, a.vel.z), vyMax = horiz * 0.32;
+    if (Math.abs(a.vel.y) > vyMax) a.vel.y = Math.sign(a.vel.y) * vyMax;
+    const v = a.vel.length(), lo = speed * 0.55, hi = speed * 1.3;
+    if (v > hi) a.vel.multiplyScalar(hi / v);
+    else if (v < lo) a.vel.multiplyScalar(lo / Math.max(v, 1e-3));
+    a.pos.addScaledVector(a.vel, dt);
+  }
+
+  // Look ahead along the swim direction and turn away from anything solid or the seabed,
+  // sideways or over the top rather than straight back, and push off anything very close.
+  avoid(a, acc, P) {
+    const F = this.field, len = a.len * a.size, rb = len * BODY.radius;
+    const v = a.vel.length() || 1e-3;
+    const fx = a.vel.x / v, fy = a.vel.y / v, fz = a.vel.z / v;
+    const look = len * P.lookLen + v * P.look;
+    const px = a.pos.x + fx * look, py = a.pos.y + fy * look, pz = a.pos.z + fz * look;
+    const d = F.sdf(px, py, pz, nrm) - rb - P.room;
+    if (d < P.band) {
+      const w = Math.min(1.6, 1 - d / P.band);
+      // the part of the surface normal across the swim direction is the way around
+      const along = nrm.x * fx + nrm.y * fy + nrm.z * fz;
+      let lx = nrm.x - along * fx, ly = nrm.y - along * fy, lz = nrm.z - along * fz;
+      let l = Math.hypot(lx, ly, lz);
+      if (l < 0.25) { // dead ahead: pick a side and keep it
+        const side = a.seed % 2 < 1 ? 1 : -1;
+        lx = fz * side; ly = 0.15; lz = -fx * side; l = Math.hypot(lx, ly, lz);
+      }
+      const g = P.gain * w;
+      acc.x += (lx / l) * g + nrm.x * g * 0.35;
+      acc.y += (ly / l) * g + nrm.y * g * 0.35;
+      acc.z += (lz / l) * g + nrm.z * g * 0.35;
+    }
+    const fl = py - this.floor(px, pz) - rb;
+    if (fl < P.floor) acc.y += P.gain * Math.min(1.6, 1 - fl / P.floor);
+    // close by, the head and tail count too: a turning body swings its ends toward things
+    const near = P.band * 0.5, reach = len * BODY.reach, cp = Math.cos(a.pitch);
+    const hx = Math.sin(a.yaw) * cp * reach, hy = -Math.sin(a.pitch) * reach, hz = Math.cos(a.yaw) * cp * reach;
+    for (let k = -1; k <= 1; k++) {
+      const qx = a.pos.x + hx * k, qy = a.pos.y + hy * k, qz = a.pos.z + hz * k;
+      const d0 = F.sdf(qx, qy, qz, nrm2) - rb - P.room;
+      if (d0 < near) {
+        const g = P.gain * Math.min(2, 1 - d0 / near);
+        acc.x += nrm2.x * g; acc.y += nrm2.y * g; acc.z += nrm2.z * g;
+      }
+      const f0 = qy - this.floor(qx, qz) - rb, fn = P.floor * 0.5;
+      if (f0 < fn) acc.y += P.gain * Math.min(2, 1 - f0 / fn);
+    }
+  }
+
+  // Last line of defence: if the head, middle or tail ended up inside something or under the
+  // seabed, slide the body back out along the surface and drop the velocity into it.
+  resolve(a) {
+    const F = this.field, len = a.len * a.size, rb = len * BODY.radius, reach = len * BODY.reach;
+    for (let pass = 0; pass < 6; pass++) {
+      const cp = Math.cos(a.pitch);
+      const hx = Math.sin(a.yaw) * cp * reach, hy = -Math.sin(a.pitch) * reach, hz = Math.cos(a.yaw) * cp * reach;
+      let moved = false;
+      for (let k = -1; k <= 1; k++) {
+        const px = a.pos.x + hx * k, py = a.pos.y + hy * k, pz = a.pos.z + hz * k;
+        const d = F.sdf(px, py, pz, nrm) - rb;
+        if (d < 0) {
+          const m = 3e-3 - d;
+          a.pos.x += nrm.x * m; a.pos.y += nrm.y * m; a.pos.z += nrm.z * m;
+          const vn = a.vel.x * nrm.x + a.vel.y * nrm.y + a.vel.z * nrm.z;
+          if (vn < 0) { a.vel.x -= nrm.x * vn; a.vel.y -= nrm.y * vn; a.vel.z -= nrm.z * vn; }
+          moved = true;
+        }
+        const f = py - this.floor(px, pz) - rb;
+        if (f < 0) { a.pos.y += 3e-3 - f; if (a.vel.y < 0) a.vel.y = 0; moved = true; }
+      }
+      if (!moved) break;
+    }
+  }
+
+  // How far the worst point of a body is inside anything (0 when clear). Used by tests.
+  penetration(a) {
+    const F = this.field, len = a.len * a.size, rb = len * BODY.radius, reach = len * BODY.reach;
+    const cp = Math.cos(a.pitch);
+    const hx = Math.sin(a.yaw) * cp * reach, hy = -Math.sin(a.pitch) * reach, hz = Math.cos(a.yaw) * cp * reach;
+    let worst = 0;
+    for (let k = -1; k <= 1; k++) {
+      const px = a.pos.x + hx * k, py = a.pos.y + hy * k, pz = a.pos.z + hz * k;
+      worst = Math.max(worst, rb - F.sdf(px, py, pz, nrm), rb - (py - this.floor(px, pz)));
+    }
+    return worst;
   }
 
   stepFish(a, g, i, dt, t, schoolCenter, sharks) {
     const sp = g.sp;
     const acc = tmp.set(0, 0, 0);
-    const desired = new THREE.Vector3();
+    const desired = vDesired.set(0, 0, 0);
     const B = this.B;
     if (sp.behavior === 'school') {
       const S = sp.school || SCHOOL;
-      const coh = new THREE.Vector3(), ali = new THREE.Vector3(), sep = new THREE.Vector3();
+      const coh = vCoh.set(0, 0, 0), ali = vAli.set(0, 0, 0), sep = vSep.set(0, 0, 0);
       let n = 0;
       for (let j = 0; j < g.agents.length; j++) {
         if (j === i) continue;
@@ -239,20 +377,10 @@ export class Aquarium {
       }
     }
     // stay inside the tank volume with soft walls
-    const soft = (v, lo, hi, w) => (v < lo + w ? (lo + w - v) / w : 0) - (v > hi - w ? (v - (hi - w)) / w : 0);
     acc.x += soft(a.pos.x, B.minX, B.maxX, 5) * 1.5;
     acc.z += soft(a.pos.z, B.minZ, B.maxZ, 5) * 1.5;
-    const floor = Math.max(B.minY, this.floor(a.pos.x, a.pos.z) + (a.home ? 0.35 : 0.9));
+    const floor = Math.max(B.minY, this.floor(a.pos.x, a.pos.z) + this.bodyRadius(a) + (a.home ? 0.25 : 0.8));
     acc.y += soft(a.pos.y, floor, B.maxY, 1.6) * 2.0;
-    // steer around coral and rock
-    for (const o of this.reef.obstacles) {
-      const dx = a.pos.x - o.x, dy = a.pos.y - o.y, dz = a.pos.z - o.z;
-      const d2 = dx * dx + dy * dy + dz * dz, rr = o.r + 0.6;
-      if (d2 < rr * rr) {
-        const d = Math.sqrt(d2) || 0.01, k = ((rr - d) / rr) * 3.0 / d;
-        acc.x += dx * k; acc.y += dy * k * 0.6 + (rr - d) * 0.6; acc.z += dz * k;
-      }
-    }
     // give cruising sharks room, calmly
     for (const s of sharks) {
       const d = a.pos.distanceTo(s.pos);
@@ -260,6 +388,8 @@ export class Aquarium {
     }
     const maxAcc = sp.behavior === 'school' ? (sp.school?.maxAcc ?? 2.2) : 1.4;
     if (acc.length() > maxAcc) acc.setLength(maxAcc);
+    // steer around rock, coral, kelp and the seabed; this comes after the cap so it always wins
+    this.avoid(a, acc, AVOID.fish);
     a.vel.addScaledVector(acc, dt);
     a.vel.y *= 1 - Math.min(1, dt * 0.8);
     const sp2 = a.vel.length();
@@ -292,6 +422,7 @@ export class Aquarium {
         const swing = sp.behavior === 'cruise' ? Math.sin(a.phase - 1.0) * 0.045 : 0;
         a.quat.setFromEuler(euler.set(a.pitch, a.yaw + swing, a.roll));
       }
+      this.resolve(a);
       a.phase += dt * sp.freq * (0.55 + 0.45 * speed / sp.speed[1]);
       g.phase.array[i] = a.phase;
       const s = smooth(Math.min(1, Math.max(0, a.scale))) * a.size;

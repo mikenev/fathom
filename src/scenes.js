@@ -2,9 +2,11 @@ import * as THREE from 'three';
 import { mergeGeometries, paint, rng } from './geo.js';
 import { patchMaterial } from './shaders.js';
 import { buildReef, seafloor, rock, particles } from './reef.js';
+import { fitShape, cyl, DOME } from './obstacles.js';
 
 const lin = (r, g, b) => new THREE.Color().setRGB(r, g, b, THREE.LinearSRGBColorSpace);
 const noFloor = () => -100;
+const KELP_SWAY = 0.0045; // the shader moves a stipe at most about 0.94 * h^2 * KELP_SWAY off its rest line
 
 // Look and preset for each scene. Lighting, fog, rays and caustics are shared
 // objects in main.js; a scene only says how to tint them.
@@ -70,6 +72,9 @@ function kelpGeometry(rand) {
   for (let i = 0; i <= 8; i++) { const y = (i / 8) * H; pts.push(new THREE.Vector3(Math.sin(y * 0.2) * 0.25 + bend * (y / H) ** 2, y, Math.cos(y * 0.17) * 0.2)); }
   const curve = new THREE.CatmullRomCurve3(pts);
   const stipe = new THREE.TubeGeometry(curve, 24, 0.05, 5);
+  stipe.computeBoundingBox();
+  let stipeR = 0; const sp = stipe.attributes.position;
+  for (let i = 0; i < sp.count; i++) stipeR = Math.max(stipeR, Math.hypot(sp.getX(i), sp.getZ(i)));
   const brown = new THREE.Color(0x5a4318), gold = new THREE.Color(0xb88a2c), olive = new THREE.Color(0x8a6420);
   parts.push(paint(stipe, (v, o) => o.copy(brown).lerp(olive, v.y / H)));
   // blades along the stipe, alternating sides, each with a small float at its base
@@ -88,7 +93,9 @@ function kelpGeometry(rand) {
     const f = new THREE.SphereGeometry(0.07, 6, 4); f.translate(c.x, c.y, c.z);
     parts.push(paint(f, (v, o) => o.copy(gold)));
   }
-  return mergeGeometries(parts);
+  const merged = mergeGeometries(parts);
+  merged.userData = { stipeR, stipeTop: stipe.boundingBox.max.y };
+  return merged;
 }
 
 function buildKelp(group) {
@@ -101,14 +108,14 @@ function buildKelp(group) {
     if (z > -4 && Math.abs(x) < 7) continue;
     const r = 0.5 + rand() * 1.4;
     const g = rock(r, rand, [0x6e6a5c, 0x5a584e, 0x7a6a58][Math.floor(rand() * 3)]);
+    obstacles.push(fitShape(g, DOME, x, z, kelpFloor(x, z) - 0.15));
     g.rotateY(rand() * 6); g.translate(x, kelpFloor(x, z) - 0.15, z);
     statics.push(g);
-    obstacles.push({ x, y: kelpFloor(x, z) + r * 0.3, z, r: r * 1.3 });
     homes.push(new THREE.Vector3(x, kelpFloor(x, z) + r * 0.7 + 0.6, z));
   }
   for (let i = 0; i < 50; i++) {
     const x = -50 + rand() * 100, z = -55 + rand() * 62;
-    const g = rock(0.15 + rand() * 0.35, rand, 0x8a8270); g.rotateY(rand() * 6); g.translate(x, kelpFloor(x, z) - 0.05, z); statics.push(g);
+    const g = rock(0.15 + rand() * 0.35, rand, 0x8a8270); obstacles.push(fitShape(g, DOME, x, z, kelpFloor(x, z) - 0.05)); g.rotateY(rand() * 6); g.translate(x, kelpFloor(x, z) - 0.05, z); statics.push(g);
   }
   group.add(new THREE.Mesh(mergeGeometries(statics), patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }), { caustic: 0.75 })));
 
@@ -126,14 +133,20 @@ function buildKelp(group) {
     const mine = spots.slice(v * per, (v + 1) * per);
     const geo = kelpGeometry(rand);
     const phase = new Float32Array(mine.length);
-    const mat = patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, side: THREE.DoubleSide }), { caustic: 0.55, sway: 0.0045 });
+    const mat = patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, side: THREE.DoubleSide }), { caustic: 0.55, sway: KELP_SWAY });
     const mesh = new THREE.InstancedMesh(geo, mat, mine.length);
     mine.forEach(([x, z], i) => {
       const k = 0.75 + rand() * 0.35;
       pos.set(x, kelpFloor(x, z) - 0.1, z); q.setFromEuler(new THREE.Euler(0, rand() * 6.28, 0)); sc.set(k, k, k);
       m.compose(pos, q, sc); mesh.setMatrixAt(i, m);
       phase[i] = x * 0.15 + z * 0.1; // neighbors sway together, like a surge passing through
-      for (const h of [2.5, 6, 10]) obstacles.push({ x, y: pos.y + h * k, z, r: 0.35 });
+      // the stipe is solid; the fronds are soft and fish may brush through them
+      // In three stacked sections, each wide enough for how far the surge sways it at that height.
+      const top = geo.userData.stipeTop;
+      for (let j = 0; j < 3; j++) {
+        const h0 = (top * j) / 3, h1 = (top * (j + 1)) / 3;
+        obstacles.push(cyl(x, z, pos.y + h1 * k, (geo.userData.stipeR + 1.05 * KELP_SWAY * h1 * h1) * k + 0.1, j ? pos.y + h0 * k : -Infinity));
+      }
       homes.push(new THREE.Vector3(x + 0.8, pos.y + 1.2, z + 0.8));
     });
     geo.setAttribute('aPhase', new THREE.InstancedBufferAttribute(phase, 1));
