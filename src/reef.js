@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries, paint, rng } from './geo.js';
 import { patchMaterial, shared } from './shaders.js';
+import { Field, fitShape, CYL, DOME } from './obstacles.js';
 
 export function floorHeight(x, z) {
   return -0.4
@@ -276,15 +277,16 @@ export function buildReef(scene) {
   scene.add(seafloor());
 
   const statics = [];
-  const obstacles = []; // {x, y, z, r} spheres fish steer around
-  const anemones = [];
+  const obstacles = []; // solid shapes fish steer around (see obstacles.js)
+  const anemones = [], pending = [];
   const colors = [0xe0567a, 0xb05cd0, 0xff8a3c, 0xf2b6c8, 0x6fc0b8, 0xd94f4f];
   const clusters = [
     [-9, -6, 1.2], [5, -9, 1.1], [14, -3, 0.9], [-18, -14, 1.3], [0, -18, 1.4], [20, -16, 1.0], [-4, 2, 0.7], [-24, -2, 0.9], [11, -24, 1.2], [-12, -26, 1.1],
     // added in M3.1: fill the gaps and the far reef so it reads as a reef, not islands
     [-27, -20, 1.2], [27, -28, 1.2], [26, -6, 0.8], [-6, -32, 1.3], [17, -36, 1.2], [-20, -36, 1.1], [-15, -4, 0.7], [7, -30, 1.0],
   ];
-  const place = (geo, x, z, rotY = 0, lift = 0) => {
+  const place = (geo, x, z, rotY = 0, lift = 0, kind = null) => {
+    if (kind !== null) obstacles.push(fitShape(geo, kind, x, z, floorHeight(x, z) + lift));
     geo.rotateY(rotY);
     geo.translate(x, floorHeight(x, z) + lift, z);
     statics.push(geo);
@@ -293,8 +295,7 @@ export function buildReef(scene) {
   clusters.forEach(([cx, cz, s], ci) => {
     const rr = 1.6 * s + rand() * 0.6;
     const g0 = floorHeight(cx, cz);
-    place(rock(rr, rand, rockTones[ci % 3]), cx, cz, rand() * 6, -0.2);
-    obstacles.push({ x: cx, y: g0 + rr * 0.3, z: cz, r: rr * 1.35 });
+    place(rock(rr, rand, rockTones[ci % 3]), cx, cz, rand() * 6, -0.2, DOME);
     // stack one or two smaller boulders on the base rock, so clusters stand up off the floor
     let top = g0 + rr * 0.55;
     const stack = s < 0.8 ? 0 : 1 + (rand() < 0.5 ? 1 : 0); // small foreground clusters stay low
@@ -303,8 +304,8 @@ export function buildReef(scene) {
       const ox = (rand() - 0.5) * r * 0.8, oz = (rand() - 0.5) * r * 0.8;
       const y = top - r * 0.15;
       const g = rock(r, rand, rockTones[(ci + k + 1) % 3]);
+      obstacles.push(fitShape(g, DOME, cx + ox, cz + oz, y));
       g.rotateY(rand() * 6); g.translate(cx + ox, y, cz + oz); statics.push(g);
-      obstacles.push({ x: cx + ox, y: y + r * 0.3, z: cz + oz, r: r * 1.3 });
       top = y + r * 0.6;
     }
     const n = 7 + Math.floor(rand() * 5);
@@ -323,22 +324,30 @@ export function buildReef(scene) {
       else { h = (1.8 + rand() * 1.4) * s * tall; g = seaFan(h, rand, [0xa04ad0, 0xe0603a, 0xe8c040][Math.floor(rand() * 3)]); }
       const ground = floorHeight(x, z);
       const lift = inner ? Math.max(0, top - ground - 0.15) : d < rr ? Math.max(0, g0 + rr * 0.55 - ground - d * 0.35) : 0;
-      place(g, x, z, rand() * 6, lift);
-      obstacles.push({ x, y: ground + lift + h * 0.4, z, r: Math.max(0.6, h * 0.55) });
+      place(g, x, z, rand() * 6, lift, kind >= 0.46 && kind < 0.62 ? DOME : CYL);
     }
     if (ci < 3 || ci === 6) {
-      const a = rand() * Math.PI * 2, d = rr * 0.9;
-      const x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d;
-      const an = anemone(rand);
-      an.position.set(x, floorHeight(x, z) - 0.05, z);
-      scene.add(an);
-      anemones.push(new THREE.Vector3(x, floorHeight(x, z) + 0.5, z));
+      const a = rand() * Math.PI * 2;
+      pending.push([anemone(rand), cx, cz, a, rr * 0.9]);
     }
   });
   // scattered small rocks and rubble
   for (let i = 0; i < 70; i++) {
     const x = -50 + rand() * 100, z = -50 + rand() * 60;
-    place(rock(0.2 + rand() * 0.5, rand, 0x9a8e7a, 2), x, z, rand() * 6, -0.05);
+    place(rock(0.2 + rand() * 0.5, rand, 0x9a8e7a, 2), x, z, rand() * 6, -0.05, DOME);
+  }
+  // Anemones sit on open sand at the edge of their cluster, walked outward until a clownfish
+  // hovering over one has room, so the fish's home is never inside rock or coral.
+  const field = new Field(floorHeight, obstacles), n = { x: 0, y: 0, z: 0 };
+  for (const [an, cx, cz, a, d0] of pending) {
+    let x, z;
+    for (let d = d0; d < d0 + 8; d += 0.15) {
+      x = cx + Math.cos(a) * d; z = cz + Math.sin(a) * d;
+      if (field.sdf(x, floorHeight(x, z) + 0.5, z, n) > 0.7) break;
+    }
+    an.position.set(x, floorHeight(x, z) - 0.05, z);
+    scene.add(an);
+    anemones.push(new THREE.Vector3(x, floorHeight(x, z) + 0.5, z));
   }
   const reefMat = patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75, metalness: 0 }), { caustic: 0.85 });
   const reef = new THREE.Mesh(mergeGeometries(statics), reefMat);
